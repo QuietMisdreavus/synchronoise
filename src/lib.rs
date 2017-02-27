@@ -7,6 +7,34 @@ use std::sync::{Mutex, Condvar};
 ///With a `CountdownEvent`, it's possible to cause one thread to wait on a set of computations
 ///occurring in other threads by making the other threads interact with the counter as they perform
 ///their work.
+///
+///The main limitation of a CountdownEvent is that once its counter reaches zero (even by starting
+///there), any attempts to update the counter will return `CountdownError::AlreadySet` until the
+///counter is reset by calling `reset` or `reset_to_count`.
+///
+///# Example
+///
+///```
+/// use synchronoise::CountdownEvent;
+/// use std::sync::Arc;
+/// use std::thread;
+/// use std::time::Duration;
+/// 
+/// let counter = Arc::new(CountdownEvent::new(5));
+/// 
+/// for i in 0..5 {
+///     let signal = counter.clone();
+///     thread::spawn(move || {
+///         thread::sleep(Duration::from_secs(3));
+///         println!("thread {} activated!", i);
+///         signal.decrement();
+///     });
+/// }
+///
+/// counter.wait();
+///
+/// println!("all done!");
+///```
 pub struct CountdownEvent {
     initial: isize,
     counter: Mutex<isize>,
