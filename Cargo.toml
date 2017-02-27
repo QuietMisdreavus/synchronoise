@@ -1,0 +1,6 @@
+[package]
+name = "synchronoise"
+version = "0.1.0"
+authors = ["QuietMisdreavus <grey@quietmisdreavus.net>"]
+
+[dependencies]
