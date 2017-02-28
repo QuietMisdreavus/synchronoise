@@ -2,6 +2,8 @@
 
 fun synchronization primitives for your fun synchronization needs
 
+[Documentation](https://docs.rs/synchronoise)
+
 This is a collection of synchronization facilities that aren't part of the standard library that I
 wanted to make sure were available for the Rust community. Right now it's just a port of
 CountdownEvent and EventWaitHandle (AutoResetEvent/ManualResetEvent) from .NET, but it could be
