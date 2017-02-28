@@ -214,6 +214,53 @@ pub enum SignalKind {
 
 /// A synchronization primitive that allows one or more threads to wait on a signal from another
 /// thread.
+///
+/// With a `SignalEvent`, it's possible to have one or more threads gate on a signal from another
+/// thread. The behavior for what happens when an event is signaled depends on the value of the
+/// `signal_kind` parameter given to `new`:
+///
+/// * A value of `SignalKind::Auto` will automatically reset the signal when a thread is resumed by
+///   this event. If more than one thread is waiting on the event when it is signaled, only one
+///   will be resumed.
+/// * A value of `SignalKind::Manual` will remain signaled until it is manually reset. If more than
+///   one thread is waiting on the event when it is signaled, all of them will be resumed. Any
+///   other thread that tries to wait on the signal before it is reset will not be blocked at all.
+///
+/// # Example
+///
+/// ```
+/// use synchronoise::{SignalEvent, SignalKind};
+/// use std::sync::Arc;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let start_signal = Arc::new(SignalEvent::new(false, SignalKind::Manual));
+/// let stop_signal = Arc::new(SignalEvent::new(false, SignalKind::Auto));
+/// let mut thread_count = 5;
+///
+/// for i in 0..thread_count {
+///     let start = start_signal.clone();
+///     let stop = stop_signal.clone();
+///     thread::spawn(move || {
+///         //as a Manual-reset signal, all the threads will start at the same time
+///         start.wait();
+///         thread::sleep(Duration::from_secs(i));
+///         println!("thread {} activated!", i);
+///         stop.signal();
+///     });
+/// }
+///
+/// start_signal.signal();
+///
+/// while thread_count > 0 {
+///     //as an Auto-reset signal, this will automatically reset when resuming
+///     //so when the loop comes back, we don't have to reset before blocking again
+///     stop_signal.wait();
+///     thread_count -= 1;
+/// }
+///
+/// println!("all done!");
+/// ```
 pub struct SignalEvent {
     reset: SignalKind,
     signal: Mutex<bool>,
@@ -239,6 +286,14 @@ impl SignalEvent {
 
     ///Sets the signal on this `SignalEvent`, potentially waking up one or all threads waiting on
     ///it.
+    ///
+    ///If more than one thread is waiting on the event, the behavior is different depending on the
+    ///`SignalKind` passed to the event when it was created. For a value of Auto, one thread will
+    ///be resumed. For a value of Manual, all waiting threads will be resumed.
+    ///
+    ///If no thread is currently waiting on the event, its state will be set regardless. Any future
+    ///attempts to wait on the event will unblock immediately, except for a `SignalKind` of Auto,
+    ///which will immediately unblock the first thread only.
     pub fn signal(&self) {
         let mut signal = util::guts(self.signal.lock());
 
@@ -258,6 +313,9 @@ impl SignalEvent {
     }
 
     ///Blocks this thread until another thread calls `signal`.
+    ///
+    ///If this event is already set, then the thread will immediately unblock. For events with a
+    ///`SignalKind` of Auto, this will reset the signal so that the next one to wait will block.
     pub fn wait(&self) {
         let mut signal = util::guts(self.signal.lock());
 
