@@ -146,7 +146,7 @@ impl CountdownEvent {
     ///
     ///See [`add`] for the situations where this function will return an error.
     ///
-    ///[`add`]: fn.add.html
+    ///[`add`]: #method.add
     pub fn increment(&self) -> Result<(), CountdownError> {
         self.add(1)
     }
@@ -158,7 +158,7 @@ impl CountdownEvent {
     ///
     ///See [`signal`] for the situations where this function will return an error.
     ///
-    ///[`signal`]: fn.signal.html
+    ///[`signal`]: #method.signal
     pub fn decrement(&self) -> Result<bool, CountdownError> {
         self.signal(1)
     }
