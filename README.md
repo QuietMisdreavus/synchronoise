@@ -4,7 +4,8 @@ fun synchronization primitives for your fun synchronization needs
 
 This is a collection of synchronization facilities that aren't part of the standard library that I
 wanted to make sure were available for the Rust community. Right now it's just a port of
-CountdownEvent from .NET, but it could be expanded in the future.
+CountdownEvent and EventWaitHandle (AutoResetEvent/ManualResetEvent) from .NET, but it could be
+expanded in the future.
 
 # License
 
