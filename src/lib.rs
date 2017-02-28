@@ -194,3 +194,102 @@ impl CountdownEvent {
         (*count, status.timed_out())
     }
 }
+
+///Determines the reset behavior of a `SignalEvent`.
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum SignalKind {
+    ///An activated `SignalEvent` automatically resets when a thread is resumed.
+    ///
+    ///`SignalEvent`s with this kind will only resume one thread at a time.
+    Auto,
+    ///An activated `SignalEvent` must be manually reset to block threads again.
+    ///
+    ///`SignalEvent`s with this kind will signal every waiting thread to continue at once.
+    Manual,
+}
+
+/// A synchronization primitive that allows one or more threads to wait on a signal from another
+/// thread.
+pub struct SignalEvent {
+    reset: SignalKind,
+    signal: Mutex<bool>,
+    lock: Condvar,
+}
+
+impl SignalEvent {
+    ///Creates a new `SignalEvent` with the given starting state and reset behavior.
+    pub fn new(init_state: bool, signal_kind: SignalKind) -> SignalEvent {
+        SignalEvent {
+            reset: signal_kind,
+            signal: Mutex::new(init_state),
+            lock: Condvar::new(),
+        }
+    }
+
+    ///Returns the current signal status of the `SignalEvent`.
+    pub fn status(&self) -> bool {
+        let signal = self.signal.lock().unwrap();
+
+        *signal
+    }
+
+    ///Sets the signal on this `SignalEvent`, potentially waking up one or all threads waiting on
+    ///it.
+    pub fn signal(&self) {
+        let mut signal = self.signal.lock().unwrap();
+
+        *signal = true;
+
+        match self.reset {
+            SignalKind::Auto => self.lock.notify_one(),
+            SignalKind::Manual => self.lock.notify_all(),
+        }
+    }
+
+    ///Resets the signal on this `SignalEvent`, allowing threads that wait on it to block.
+    pub fn reset(&self) {
+        let mut signal = self.signal.lock().unwrap();
+
+        *signal = false;
+    }
+
+    ///Blocks this thread until another thread calls `signal`.
+    pub fn wait(&self) {
+        let mut signal = self.signal.lock().unwrap();
+
+        while !*signal {
+            signal = self.lock.wait(signal).unwrap();
+        }
+
+        if self.reset == SignalKind::Auto {
+            //don't want to call self.reset() since it would deadlock the mutex
+            *signal = false;
+        }
+    }
+
+    ///Blocks this thread until either another thread calls `signal`, or until the timeout elapses.
+    ///
+    ///This function returns both the status of the signal when it woke up, and whether the timeout
+    ///was known to have elapsed. Note that due to platform-specific implementations of
+    ///`std::sync::Condvar`, it's possible for this wait to spuriously wake up when neither the
+    ///signal was set nor the timeout had elapsed.
+    pub fn wait_timeout(&self, timeout: Duration) -> (bool, bool) {
+        let mut signal = self.signal.lock().unwrap();
+
+        if *signal {
+            if self.reset == SignalKind::Auto {
+                *signal = false;
+            }
+            return (true, false);
+        }
+
+        let (signal, status) = self.lock.wait_timeout(signal, timeout).unwrap();
+        let ret = *signal;
+
+        if self.reset == SignalKind::Auto {
+            *signal = false;
+        }
+
+        (ret, status.timed_out())
+    }
+}
