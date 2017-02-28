@@ -1,27 +1,29 @@
 //! A collection of synchronization primitives that build on the primitives available in the
 //! standard library.
-use std::sync::{Mutex, Condvar};
 
-///A synchronization primitive that signals when its count reaches zero.
+use std::sync::{Mutex, Condvar};
+use std::time::Duration;
+
+/// A synchronization primitive that signals when its count reaches zero.
 ///
-///With a `CountdownEvent`, it's possible to cause one thread to wait on a set of computations
-///occurring in other threads by making the other threads interact with the counter as they perform
-///their work.
+/// With a `CountdownEvent`, it's possible to cause one thread to wait on a set of computations
+/// occurring in other threads by making the other threads interact with the counter as they perform
+/// their work.
 ///
-///The main limitation of a CountdownEvent is that once its counter reaches zero (even by starting
-///there), any attempts to update the counter will return `CountdownError::AlreadySet` until the
-///counter is reset by calling `reset` or `reset_to_count`.
+/// The main limitation of a CountdownEvent is that once its counter reaches zero (even by starting
+/// there), any attempts to update the counter will return `CountdownError::AlreadySet` until the
+/// counter is reset by calling `reset` or `reset_to_count`.
 ///
-///# Example
+/// # Example
 ///
-///```
+/// ```
 /// use synchronoise::CountdownEvent;
 /// use std::sync::Arc;
 /// use std::thread;
 /// use std::time::Duration;
-/// 
+///
 /// let counter = Arc::new(CountdownEvent::new(5));
-/// 
+///
 /// for i in 0..5 {
 ///     let signal = counter.clone();
 ///     thread::spawn(move || {
@@ -34,7 +36,7 @@ use std::sync::{Mutex, Condvar};
 /// counter.wait();
 ///
 /// println!("all done!");
-///```
+/// ```
 pub struct CountdownEvent {
     initial: isize,
     counter: Mutex<isize>,
@@ -171,5 +173,24 @@ impl CountdownEvent {
         while *count > 0 {
             count = self.lock.wait(count).unwrap();
         }
+    }
+
+    ///Blocks the current thread until the timer reaches zero, or until the given timeout elapses,
+    ///returning the count at the time of wakeup and whether the timeout is known to have elapsed.
+    ///
+    ///This function will return immediately if the counter was already at zero. Otherwise, it will
+    ///block for roughly no longer than `timeout`. Due to limitations in the platform specific
+    ///implementation of `std::sync::Condvar`, this method could spuriously wake up both before the timeout
+    ///elapsed and without the count being zero.
+    pub fn wait_timeout(&self, timeout: Duration) -> (isize, bool) {
+        let count = self.counter.lock().unwrap();
+
+        if *count == 0 {
+            return (*count, false);
+        }
+
+        let (count, status) = self.lock.wait_timeout(count, timeout).unwrap();
+
+        (*count, status.timed_out())
     }
 }
