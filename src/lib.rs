@@ -1,6 +1,8 @@
 //! A collection of synchronization primitives that build on the primitives available in the
 //! standard library.
 
+mod util;
+
 use std::sync::{Mutex, Condvar};
 use std::time::Duration;
 
@@ -83,7 +85,7 @@ impl CountdownEvent {
 
     ///Returns the current counter value.
     pub fn count(&self) -> isize {
-        let lock = self.counter.lock().unwrap();
+        let lock = util::guts(self.counter.lock());
 
         *lock
     }
@@ -96,7 +98,7 @@ impl CountdownEvent {
     ///
     ///If the given count would overflow an `isize`, this function will return an error.
     pub fn add(&self, count: isize) -> Result<(), CountdownError> {
-        let mut lock = self.counter.lock().unwrap();
+        let mut lock = util::guts(self.counter.lock());
 
         if *lock <= 0 {
             return Err(CountdownError::AlreadySet);
@@ -120,7 +122,7 @@ impl CountdownEvent {
     ///
     ///If the given count is greater than the current counter, this function will return an error.
     pub fn signal(&self, count: isize) -> Result<bool, CountdownError> {
-        let mut lock = self.counter.lock().unwrap();
+        let mut lock = util::guts(self.counter.lock());
 
         if *lock == 0 {
             return Err(CountdownError::AlreadySet);
@@ -168,10 +170,10 @@ impl CountdownEvent {
     ///This function will block indefinitely until the counter reaches zero. It will return
     ///immediately if it is already at zero.
     pub fn wait(&self) {
-        let mut count = self.counter.lock().unwrap();
+        let mut count = util::guts(self.counter.lock());
 
         while *count > 0 {
-            count = self.lock.wait(count).unwrap();
+            count = util::guts(self.lock.wait(count));
         }
     }
 
@@ -183,13 +185,13 @@ impl CountdownEvent {
     ///implementation of `std::sync::Condvar`, this method could spuriously wake up both before the timeout
     ///elapsed and without the count being zero.
     pub fn wait_timeout(&self, timeout: Duration) -> (isize, bool) {
-        let count = self.counter.lock().unwrap();
+        let count = util::guts(self.counter.lock());
 
         if *count == 0 {
             return (*count, false);
         }
 
-        let (count, status) = self.lock.wait_timeout(count, timeout).unwrap();
+        let (count, status) = util::guts(self.lock.wait_timeout(count, timeout));
 
         (*count, status.timed_out())
     }
@@ -228,7 +230,7 @@ impl SignalEvent {
 
     ///Returns the current signal status of the `SignalEvent`.
     pub fn status(&self) -> bool {
-        let signal = self.signal.lock().unwrap();
+        let signal = util::guts(self.signal.lock());
 
         *signal
     }
@@ -236,7 +238,7 @@ impl SignalEvent {
     ///Sets the signal on this `SignalEvent`, potentially waking up one or all threads waiting on
     ///it.
     pub fn signal(&self) {
-        let mut signal = self.signal.lock().unwrap();
+        let mut signal = util::guts(self.signal.lock());
 
         *signal = true;
 
@@ -248,17 +250,17 @@ impl SignalEvent {
 
     ///Resets the signal on this `SignalEvent`, allowing threads that wait on it to block.
     pub fn reset(&self) {
-        let mut signal = self.signal.lock().unwrap();
+        let mut signal = util::guts(self.signal.lock());
 
         *signal = false;
     }
 
     ///Blocks this thread until another thread calls `signal`.
     pub fn wait(&self) {
-        let mut signal = self.signal.lock().unwrap();
+        let mut signal = util::guts(self.signal.lock());
 
         while !*signal {
-            signal = self.lock.wait(signal).unwrap();
+            signal = util::guts(self.lock.wait(signal));
         }
 
         if self.reset == SignalKind::Auto {
@@ -274,7 +276,7 @@ impl SignalEvent {
     ///`std::sync::Condvar`, it's possible for this wait to spuriously wake up when neither the
     ///signal was set nor the timeout had elapsed.
     pub fn wait_timeout(&self, timeout: Duration) -> (bool, bool) {
-        let mut signal = self.signal.lock().unwrap();
+        let mut signal = util::guts(self.signal.lock());
 
         if *signal {
             if self.reset == SignalKind::Auto {
@@ -283,7 +285,7 @@ impl SignalEvent {
             return (true, false);
         }
 
-        let (signal, status) = self.lock.wait_timeout(signal, timeout).unwrap();
+        let (mut signal, status) = util::guts(self.lock.wait_timeout(signal, timeout));
         let ret = *signal;
 
         if self.reset == SignalKind::Auto {
