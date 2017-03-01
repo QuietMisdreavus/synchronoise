@@ -27,4 +27,8 @@ extern crate synchronoise;
 synchronoise is licensed under either the MIT License or the Apache License version 2.0, at your
 option. See the files `LICENSE-MIT` and `LICENSE-APACHE` for details.
 
+(synchronoise is named after [a move in Pokemon][synch], by the way)
+
+[synch]: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
+
 <!-- vim: set tw=100 expandtab: -->

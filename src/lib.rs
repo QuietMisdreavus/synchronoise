@@ -1,7 +1,7 @@
 //! A collection of synchronization primitives that build on the primitives available in the
 //! standard library.
-//!
-//! Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
+
+//Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
 
 mod util;
 
