@@ -1,6 +1,8 @@
 //! A collection of synchronization primitives that build on the primitives available in the
 //! standard library.
 
+#![warn(missing_docs)]
+
 //Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
 
 mod util;
@@ -167,6 +169,18 @@ impl CountdownEvent {
         self.signal(1)
     }
 
+    ///Increments the counter, then returns a guard object that will decrement the counter upon
+    ///drop.
+    ///
+    ///# Errors
+    ///
+    ///This function will return the same errors as `add`. If the event has already signaled by the
+    ///time the guard is dropped (and would cause its `decrement` call to return an error), then
+    ///the error will be silently ignored.
+    pub fn guard(&self) -> Result<CountdownGuard, CountdownError> {
+        CountdownGuard::new(self)
+    }
+
     ///Blocks the current thread until the counter reaches zero.
     ///
     ///This function will block indefinitely until the counter reaches zero. It will return
@@ -196,6 +210,28 @@ impl CountdownEvent {
         let (count, status) = util::guts(self.lock.wait_timeout(count, timeout));
 
         (*count, status.timed_out())
+    }
+}
+
+///An opaque guard struct that decrements the count of a borrowed `CountdownEvent` on drop.
+pub struct CountdownGuard<'a> {
+    event: &'a CountdownEvent,
+}
+
+impl<'a> CountdownGuard<'a> {
+    fn new(event: &'a CountdownEvent) -> Result<CountdownGuard<'a>, CountdownError> {
+        try!(event.increment());
+        Ok(CountdownGuard {
+                event: event,
+        })
+    }
+}
+
+impl<'a> Drop for CountdownGuard<'a> {
+    fn drop(&mut self) {
+        //if decrement() returns an error, then the event has already been signaled somehow. i'm
+        //not gonna care about it tho
+        self.event.decrement().ok();
     }
 }
 

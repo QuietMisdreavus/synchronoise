@@ -1,5 +1,9 @@
 # changelog for synchronoise
 
+## Pending
+### Added
+- `CountdownEvent::guard` and `CountdownGuard`, to provide scope-based increment/decrement
+
 ## [0.2.0] - 2017-02-28
 ### Added
 - `CountdownEvent::wait_timeout`, to wait but also have a timeout
