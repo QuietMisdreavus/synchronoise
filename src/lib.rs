@@ -7,8 +7,11 @@
 
 mod util;
 
-use std::sync::{Mutex, Condvar};
+use std::sync::{Arc, Mutex, Condvar, LockResult, MutexGuard};
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::isize::MIN as ISIZE_MIN;
 use std::time::Duration;
+use std::thread;
 
 /// A synchronization primitive that signals when its count reaches zero.
 ///
@@ -389,5 +392,123 @@ impl SignalEvent {
         }
 
         (ret, status.timed_out())
+    }
+}
+
+/// A synchronization primitive that allows for multiple concurrent wait-free "writer critical
+/// sections" and a "reader phase flip" that can wait for all currerntly-active writers to finish.
+pub struct WriterReaderPhaser {
+    start_epoch: Arc<AtomicIsize>,
+    even_end_epoch: Arc<AtomicIsize>,
+    odd_end_epoch: Arc<AtomicIsize>,
+    read_lock: Mutex<PhaserReadLock>,
+}
+
+///Guard struct that represents a "writer critical section" for a `WriterReaderPhaser`.
+pub struct PhaserCriticalSection {
+    end_epoch: Arc<AtomicIsize>,
+}
+
+///Upon drop, a `PhaserCriticalSection` will signal its parent `WriterReaderPhaser` that the
+///critical section has ended.
+impl Drop for PhaserCriticalSection {
+    fn drop(&mut self) {
+        self.end_epoch.fetch_add(1, Ordering::Release);
+    }
+}
+
+///Guard struct for a `WriterReaderPhaser` that allows a reader to perform a "phase flip".
+pub struct PhaserReadLock {
+    start_epoch: Arc<AtomicIsize>,
+    even_end_epoch: Arc<AtomicIsize>,
+    odd_end_epoch: Arc<AtomicIsize>,
+}
+
+impl WriterReaderPhaser {
+    ///Creates a new `WriterReaderPhaser`.
+    pub fn new() -> WriterReaderPhaser {
+        let start = Arc::new(AtomicIsize::new(0));
+        let even = Arc::new(AtomicIsize::new(0));
+        let odd = Arc::new(AtomicIsize::new(ISIZE_MIN));
+        let read_lock = PhaserReadLock {
+            start_epoch: start.clone(),
+            even_end_epoch: even.clone(),
+            odd_end_epoch: odd.clone(),
+        };
+
+        WriterReaderPhaser {
+            start_epoch: start,
+            even_end_epoch: even,
+            odd_end_epoch: odd,
+            read_lock: Mutex::new(read_lock),
+        }
+    }
+
+    ///Enters a writer critical section, returning a guard object that signals the end of the
+    ///critical section upon drop.
+    pub fn writer_critical_section(&self) -> PhaserCriticalSection {
+        let flag = self.start_epoch.fetch_add(1, Ordering::Release);
+
+        if flag < 0 {
+            PhaserCriticalSection {
+                end_epoch: self.odd_end_epoch.clone(),
+            }
+        } else {
+            PhaserCriticalSection {
+                end_epoch: self.even_end_epoch.clone(),
+            }
+        }
+    }
+
+    ///Enter a reader criticial section, potentially blocking until a currently active read section
+    ///finishes. Returns a guard object that allows the user to flip the phase of the
+    ///`WriterReaderPhaser`, and unlocks the read lock upon drop.
+    ///
+    ///# Errors
+    ///
+    ///If another reader critical section panicked while holding the read lock, this call will
+    ///return an error once the lock is acquired. See the documentation for
+    ///`std::sync::Mutex::lock` for details.
+    pub fn read_lock(&self) -> LockResult<MutexGuard<PhaserReadLock>> {
+        self.read_lock.lock()
+    }
+}
+
+impl PhaserReadLock {
+    ///Wait until all currently-active writer critical sections have completed.
+    pub fn flip_phase(&self) {
+        self.flip_with_duration(Duration::default());
+    }
+
+    ///Wait until all currently-active writer critical sections have completed. While waiting,
+    ///sleep with the given duration.
+    pub fn flip_with_duration(&self, sleep_time: Duration) {
+        let next_phase_even = self.start_epoch.load(Ordering::Relaxed) < 0;
+
+        let start_value = if next_phase_even {
+            let tmp = 0;
+            self.even_end_epoch.store(tmp, Ordering::Relaxed);
+            tmp
+        } else {
+            let tmp = ISIZE_MIN;
+            self.odd_end_epoch.store(tmp, Ordering::Relaxed);
+            tmp
+        };
+
+        let value_at_flip = self.start_epoch.swap(start_value, Ordering::AcqRel);
+
+        let end_epoch = if next_phase_even {
+            self.odd_end_epoch.clone()
+        } else {
+            self.even_end_epoch.clone()
+        };
+
+        while end_epoch.load(Ordering::Relaxed) != value_at_flip {
+            if sleep_time == Duration::default() {
+                thread::yield_now();
+            } else {
+                thread::sleep(sleep_time);
+            }
+        }
     }
 }

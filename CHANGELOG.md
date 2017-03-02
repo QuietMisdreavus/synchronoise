@@ -3,6 +3,9 @@
 ## Pending
 ### Added
 - `CountdownEvent::guard` and `CountdownGuard`, to provide scope-based increment/decrement
+- `WriterReaderPhaser`, a primitive that allows multiple wait-free "writer critical sections"
+  against a "reader phase flip" that waits for currently-active writers to finish
+  - also the related structs `PhaserCriticalSection` and `PhaserReadLock`
 
 ## [0.2.0] - 2017-02-28
 ### Added
