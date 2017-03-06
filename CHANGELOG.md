@@ -1,6 +1,6 @@
 # changelog for synchronoise
 
-## Pending
+## [0.3.0] - 2017-03-06
 ### Added
 - `CountdownEvent::guard` and `CountdownGuard`, to provide scope-based increment/decrement
 - `WriterReaderPhaser`, a primitive that allows multiple wait-free "writer critical sections"
