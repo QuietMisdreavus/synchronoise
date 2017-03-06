@@ -397,6 +397,34 @@ impl SignalEvent {
 
 /// A synchronization primitive that allows for multiple concurrent wait-free "writer critical
 /// sections" and a "reader phase flip" that can wait for all currerntly-active writers to finish.
+///
+/// The basic interaction setup for a `WriterReaderPhaser` is as follows:
+///
+/// * Any number of writers can open and close a "writer critical section" with no waiting.
+/// * Zero or one readers can be active at one time, by holding a "read lock". Any reader who
+///   wishes to open a "read lock" while another one is active is blocked until the previous one
+///   finishes.
+/// * The holder of a read lock may request a "phase flip", which causes the reader to wait until
+///   all current writer critical sections are finished before continuing.
+///
+/// `WriterReaderPhaser` is a port of the primitive of the same name from `HdrHistogram`. For a
+/// summary of the rationale behind its design, see [this post by its author][wrp-blog]. Part of
+/// its assumptions is that this primitive is synchronizing access to a double-buffered set of
+/// counters, and the readers are expected to swap the buffers while holding a read lock but before
+/// flipping the phase. This allows them to access a stable sample to read and perform calculations
+/// from, while writers still have wait-free synchronization.
+///
+/// [wrp-blog]: https://stuff-gil-says.blogspot.com/2014/11/writerreaderphaser-story-about-new.html
+///
+/// "Writer critical sections" and "read locks" are represented by guard structs that allow
+/// scope-based resource management of the counters and locks.
+///
+/// * The `PhaserCriticalSection` atomically increments and decrements the phase counters upon
+///   creation and drop. These operations use `std::sync::atomic::AtomicIsize` from the standard
+///   library, and provide no-wait handling for platforms with atomic addition instructions.
+/// * The `PhaserReadLock` is kept in the `WriterReaderPhaser` as a Mutex, enforcing the mutual
+///   exclusion of the read lock. The "phase flip" operation is defined on the read lock guard
+///   itself, enforcing that only the holder of a read lock can execute one.
 pub struct WriterReaderPhaser {
     start_epoch: Arc<AtomicIsize>,
     even_end_epoch: Arc<AtomicIsize>,
@@ -404,7 +432,23 @@ pub struct WriterReaderPhaser {
     read_lock: Mutex<PhaserReadLock>,
 }
 
-///Guard struct that represents a "writer critical section" for a `WriterReaderPhaser`.
+/// Guard struct that represents a "writer critical section" for a `WriterReaderPhaser`.
+///
+/// `PhaserCriticalSection` is a scope-based guard to signal the beginning and end of a "writer
+/// critical section" to the phaser. Upon calling `writer_critical_section`, the phaser atomically
+/// increments a counter, and when the returned `PhaserCriticalSection` drops, the `drop` call
+/// atomically increments another counter. On platforms with atomic increment instructions, this
+/// should result in wait-free synchronization.
+///
+/// # Example
+///
+/// ```
+/// # let phaser = synchronoize::WriterReaderPhaser::new();
+/// {
+///     let _guard = phaser.writer_critical_section();
+///     // perform writes
+/// } // _guard drops, signaling the end of the section
+/// ```
 pub struct PhaserCriticalSection {
     end_epoch: Arc<AtomicIsize>,
 }
@@ -417,7 +461,26 @@ impl Drop for PhaserCriticalSection {
     }
 }
 
-///Guard struct for a `WriterReaderPhaser` that allows a reader to perform a "phase flip".
+/// Guard struct for a `WriterReaderPhaser` that allows a reader to perform a "phase flip".
+///
+/// The `PhaserReadLock` struct allows one to perform a "phase flip" on its parent
+/// `WriterReaderPhaser`. It is held in a `std::sync::Mutex` in its parent phaser, enforcing that
+/// only one reader may be active at once.
+///
+/// The `flip_phase` call performs a spin-wait while waiting the the currently-active writers to
+/// finish. A sleep time may be added between checks by calling `flip_with_sleep` instead.
+///
+/// # Example
+///
+/// ```
+/// # let phaser = synchronoise::WriterReaderPhaser::new();
+/// {
+///     let lock = phaser.read_lock().unwrap();
+///     // swap buffers
+///     lock.flip_phase();
+///     // reader now has access to a stable snapshot
+/// } // lock drops, relinquishing the read lock and allowing another reader to lock
+/// ```
 pub struct PhaserReadLock {
     start_epoch: Arc<AtomicIsize>,
     even_end_epoch: Arc<AtomicIsize>,
@@ -477,12 +540,12 @@ impl WriterReaderPhaser {
 impl PhaserReadLock {
     ///Wait until all currently-active writer critical sections have completed.
     pub fn flip_phase(&self) {
-        self.flip_with_duration(Duration::default());
+        self.flip_with_sleep(Duration::default());
     }
 
     ///Wait until all currently-active writer critical sections have completed. While waiting,
     ///sleep with the given duration.
-    pub fn flip_with_duration(&self, sleep_time: Duration) {
+    pub fn flip_with_sleep(&self, sleep_time: Duration) {
         let next_phase_even = self.start_epoch.load(Ordering::Relaxed) < 0;
 
         let start_value = if next_phase_even {
