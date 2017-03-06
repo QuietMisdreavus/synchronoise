@@ -1,5 +1,18 @@
 //! A collection of synchronization primitives that build on the primitives available in the
 //! standard library.
+//!
+//! This library contains the following special-purpose synchronization primitives:
+//!
+//! * [`CountdownEvent`], a primitive that keeps a counter and allows a thread to wait until the
+//!   counter reaches zero.
+//! * [`SignalEvent`], a primitive that allows one or more threads to wait on a signal from another
+//!   thread.
+//! * [`WriterReaderPhaser`], a primitive that allows multiple wait-free "writer critical sections"
+//!   against a "reader phase flip" that waits for currently-active writers to finish.
+//!
+//! [`CountdownEvent`]: struct.CountdownEvent.html
+//! [`SignalEvent`]: struct.SignalEvent.html
+//! [`WriterReaderPhaser`]: struct.WriterReaderPhaser.html
 
 #![warn(missing_docs)]
 
@@ -22,6 +35,10 @@ use std::thread;
 /// The main limitation of a CountdownEvent is that once its counter reaches zero (even by starting
 /// there), any attempts to update the counter will return `CountdownError::AlreadySet` until the
 /// counter is reset by calling `reset` or `reset_to_count`.
+///
+/// `CountdownEvent` is a port of [System.Threading.CountdownEvent][src-link] from .NET.
+///
+/// [src-link]: https://msdn.microsoft.com/en-us/library/system.threading.countdownevent(v=vs.110).aspx
 ///
 /// # Example
 ///
@@ -264,6 +281,10 @@ pub enum SignalKind {
 /// * A value of `SignalKind::Manual` will remain signaled until it is manually reset. If more than
 ///   one thread is waiting on the event when it is signaled, all of them will be resumed. Any
 ///   other thread that tries to wait on the signal before it is reset will not be blocked at all.
+///
+/// `SignalEvent` is a port of [System.Threading.EventWaitHandle][src-link] from .NET.
+///
+/// [src-link]: https://msdn.microsoft.com/en-us/library/system.threading.eventwaithandle(v=vs.110).aspx
 ///
 /// # Example
 ///

@@ -5,9 +5,14 @@ fun synchronization primitives for your fun synchronization needs
 [Documentation](https://docs.rs/synchronoise)
 
 This is a collection of synchronization facilities that aren't part of the standard library that I
-wanted to make sure were available for the Rust community. Right now it's just a port of
-CountdownEvent and EventWaitHandle (AutoResetEvent/ManualResetEvent) from .NET, but it could be
-expanded in the future.
+wanted to make sure were available for the Rust community.
+
+This crate contains the following synchronization primitives:
+
+* `CountdownEvent`, a port of `System.Threading.CountdownEvent` from .NET.
+* `SignalEvent`, a port of `System.Threading.EventWaitHandle` (and its derived classes,
+  `AutoResetEvent` and `ManualResetEvent`) from .NET.
+* `WriterReaderPhaser`, a port of `WriterReaderPhaser` from HdrHistogram.
 
 To add this crate to your project, add the following line to your Cargo.toml:
 
