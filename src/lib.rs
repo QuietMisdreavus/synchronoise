@@ -464,7 +464,7 @@ pub struct WriterReaderPhaser {
 /// # Example
 ///
 /// ```
-/// # let phaser = synchronoize::WriterReaderPhaser::new();
+/// # let phaser = synchronoise::WriterReaderPhaser::new();
 /// {
 ///     let _guard = phaser.writer_critical_section();
 ///     // perform writes
