@@ -36,7 +36,8 @@ use std::thread;
 /// there), any attempts to update the counter will return `CountdownError::AlreadySet` until the
 /// counter is reset by calling `reset` or `reset_to_count`.
 ///
-/// `CountdownEvent` is a port of [System.Threading.CountdownEvent][src-link] from .NET.
+/// `CountdownEvent` is a port of [System.Threading.CountdownEvent][src-link] from .NET (also
+/// called `CountDownLatch` in Java).
 ///
 /// [src-link]: https://msdn.microsoft.com/en-us/library/system.threading.countdownevent(v=vs.110).aspx
 ///
