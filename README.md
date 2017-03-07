@@ -11,7 +11,8 @@ wanted to make sure were available for the Rust community.
 
 This crate contains the following synchronization primitives:
 
-* `CountdownEvent`, a port of `System.Threading.CountdownEvent` from .NET.
+* `CountdownEvent`, a port of `System.Threading.CountdownEvent` from .NET (also called
+  `CountDownLatch` in Java).
 * `SignalEvent`, a port of `System.Threading.EventWaitHandle` (and its derived classes,
   `AutoResetEvent` and `ManualResetEvent`) from .NET.
 * `WriterReaderPhaser`, a port of `WriterReaderPhaser` from HdrHistogram.
