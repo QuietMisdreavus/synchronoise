@@ -4,7 +4,7 @@ fun synchronization primitives for your fun synchronization needs
 
 [Documentation](https://docs.rs/synchronoise) | ([Manually-generated docs for master][doc-dev])
 
-[doc-dev]: https://shiva.icesoldier.me/synchronoise-dev/synchronoise/
+[doc-dev]: https://tonberry.quietmisdreavus.net/synchronoise-dev/synchronoise/
 
 This is a collection of synchronization facilities that aren't part of the standard library that I
 wanted to make sure were available for the Rust community.
