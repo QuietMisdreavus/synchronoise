@@ -14,7 +14,7 @@
 //! [`SignalEvent`]: struct.SignalEvent.html
 //! [`WriterReaderPhaser`]: struct.WriterReaderPhaser.html
 
-#![warn(missing_docs)]
+#![deny(warnings, missing_docs)]
 
 //Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
 
