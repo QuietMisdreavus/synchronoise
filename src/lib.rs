@@ -58,7 +58,7 @@ use crossbeam::sync::MsQueue;
 ///     thread::spawn(move || {
 ///         thread::sleep(Duration::from_secs(3));
 ///         println!("thread {} activated!", i);
-///         signal.decrement();
+///         signal.decrement().unwrap();
 ///     });
 /// }
 ///
@@ -73,6 +73,7 @@ pub struct CountdownEvent {
 }
 
 ///The collection of errors that can be returned by `CountdownEvent` methods.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CountdownError {
     ///Returned when adding to a counter would have caused it to overflow.
     SaturatedCounter,
