@@ -20,10 +20,8 @@
 
 extern crate crossbeam;
 
-mod util;
-
-use std::sync::{Arc, Mutex, Condvar, LockResult, MutexGuard};
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::{Arc, Mutex, LockResult, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicUsize, AtomicIsize, Ordering};
 use std::isize::MIN as ISIZE_MIN;
 use std::time::Duration;
 use std::thread;
@@ -69,9 +67,9 @@ use crossbeam::sync::MsQueue;
 /// println!("all done!");
 /// ```
 pub struct CountdownEvent {
-    initial: isize,
-    counter: Mutex<isize>,
-    lock: Condvar,
+    initial: usize,
+    counter: AtomicUsize,
+    waiting: MsQueue<thread::Thread>,
 }
 
 ///The collection of errors that can be returned by `CountdownEvent` methods.
@@ -86,11 +84,11 @@ pub enum CountdownError {
 
 impl CountdownEvent {
     ///Creates a new `CountdownEvent`, initialized to the given count.
-    pub fn new(count: isize) -> CountdownEvent {
+    pub fn new(count: usize) -> CountdownEvent {
         CountdownEvent {
             initial: count,
-            counter: Mutex::new(count),
-            lock: Condvar::new(),
+            counter: AtomicUsize::new(count),
+            waiting: MsQueue::new(),
         }
     }
 
@@ -99,24 +97,25 @@ impl CountdownEvent {
     ///This function is safe because the `&mut self` enforces that no other references or locks
     ///exist.
     pub fn reset(&mut self) {
-        self.counter = Mutex::new(self.initial);
-        self.lock = Condvar::new();
+        self.counter = AtomicUsize::new(self.initial);
+        //there shouldn't be any remaining thread handles in here, but let's clear it out anyway
+        while let Some(thread) = self.waiting.try_pop() {
+            thread.unpark();
+        }
     }
 
     ///Resets the counter to the given count.
     ///
     ///This function is safe because the `&mut self` enforces that no other references or locks
     ///exist.
-    pub fn reset_to_count(&mut self, count: isize) {
+    pub fn reset_to_count(&mut self, count: usize) {
         self.initial = count;
         self.reset();
     }
 
     ///Returns the current counter value.
-    pub fn count(&self) -> isize {
-        let lock = util::guts(self.counter.lock());
-
-        *lock
+    pub fn count(&self) -> usize {
+        self.counter.load(Ordering::SeqCst)
     }
 
     ///Adds the given count to the counter.
@@ -126,20 +125,25 @@ impl CountdownEvent {
     ///If the counter is already at or below zero, this function will return an error.
     ///
     ///If the given count would overflow an `isize`, this function will return an error.
-    pub fn add(&self, count: isize) -> Result<(), CountdownError> {
-        let mut lock = util::guts(self.counter.lock());
+    pub fn add(&self, count: usize) -> Result<(), CountdownError> {
+        let mut current = self.count();
 
-        if *lock <= 0 {
-            return Err(CountdownError::AlreadySet);
+        loop {
+            if current == 0 {
+                return Err(CountdownError::AlreadySet);
+            }
+
+            if let Some(new_count) = current.checked_add(count) {
+                let last_count = self.counter.compare_and_swap(current, new_count, Ordering::SeqCst);
+                if last_count == current {
+                    return Ok(());
+                } else {
+                    current = last_count;
+                }
+            } else {
+                return Err(CountdownError::SaturatedCounter);
+            }
         }
-
-        if let Some(new_count) = count.checked_add(*lock) {
-            *lock = new_count;
-        } else {
-            return Err(CountdownError::SaturatedCounter);
-        }
-
-        Ok(())
     }
 
     ///Subtracts the given count to the counter, and returns whether this caused any waiting
@@ -150,21 +154,31 @@ impl CountdownEvent {
     ///If the counter was already at or below zero, this function will return an error.
     ///
     ///If the given count is greater than the current counter, this function will return an error.
-    pub fn signal(&self, count: isize) -> Result<bool, CountdownError> {
-        let mut lock = util::guts(self.counter.lock());
+    pub fn signal(&self, count: usize) -> Result<bool, CountdownError> {
+        let mut current = self.count();
 
-        if *lock == 0 {
-            return Err(CountdownError::AlreadySet);
+        loop {
+            if current == 0 {
+                return Err(CountdownError::AlreadySet);
+            }
+
+            if let Some(new_count) = current.checked_sub(count) {
+                let last_count = self.counter.compare_and_swap(current, new_count, Ordering::SeqCst);
+                if last_count == current {
+                    current = 0;
+                    break;
+                } else {
+                    current = last_count;
+                }
+            } else {
+                return Err(CountdownError::TooManySignals);
+            }
         }
 
-        if count <= *lock {
-            *lock -= count;
-        } else {
-            return Err(CountdownError::TooManySignals);
-        }
-
-        if *lock == 0 {
-            self.lock.notify_all();
+        if current == 0 {
+            while let Some(thread) = self.waiting.try_pop() {
+                thread.unpark();
+            }
             Ok(true)
         } else {
             Ok(false)
@@ -211,10 +225,9 @@ impl CountdownEvent {
     ///This function will block indefinitely until the counter reaches zero. It will return
     ///immediately if it is already at zero.
     pub fn wait(&self) {
-        let mut count = util::guts(self.counter.lock());
-
-        while *count > 0 {
-            count = util::guts(self.lock.wait(count));
+        while self.count() > 0 {
+            self.waiting.push(thread::current());
+            thread::park();
         }
     }
 
@@ -222,19 +235,34 @@ impl CountdownEvent {
     ///returning the count at the time of wakeup and whether the timeout is known to have elapsed.
     ///
     ///This function will return immediately if the counter was already at zero. Otherwise, it will
-    ///block for roughly no longer than `timeout`. Due to limitations in the platform specific
-    ///implementation of `std::sync::Condvar`, this method could spuriously wake up both before the
-    ///timeout elapsed and without the count being zero.
-    pub fn wait_timeout(&self, timeout: Duration) -> (isize, bool) {
-        let count = util::guts(self.counter.lock());
+    ///block for roughly no longer than `timeout`.
+    pub fn wait_timeout(&self, timeout: Duration) -> usize {
+        use std::time::Instant;
 
-        if *count == 0 {
-            return (*count, false);
+        let begin = Instant::now();
+        let mut first = true;
+        let mut remaining = timeout;
+        loop {
+            let current = self.count();
+
+            if current == 0 {
+                return 0;
+            }
+
+            if first {
+                first = false;
+            } else {
+                let elapsed = begin.elapsed();
+                if elapsed >= timeout {
+                    return current;
+                } else {
+                    remaining = timeout - elapsed;
+                }
+            }
+
+            self.waiting.push(thread::current());
+            thread::park_timeout(remaining);
         }
-
-        let (count, status) = util::guts(self.lock.wait_timeout(count, timeout));
-
-        (*count, status.timed_out())
     }
 }
 
@@ -429,6 +457,7 @@ impl SignalEvent {
                 }
             }
 
+            self.waiting.push(thread::current());
             thread::park_timeout(remaining);
         }
     }

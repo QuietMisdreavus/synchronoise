@@ -2,10 +2,14 @@
 
 ## Pending
 ### Changed
-- `SignalEvent` has been updated to not use `Mutex`es internally
+- `SignalEvent` and `CountdownEvent` have been updated to not use `Mutex`es internally
   - In the refactor, `wait_timeout` was changed to always wait for the full duration if the signal
     was never set, so the return value has been changed to reflect this. This is a **breaking
     change**
+  - In the refactor, `CountdownEvent` was changed so that its counter is now is `usize` instead of
+    an `isize`. Since it's an invalid state for the counter to be below zero, let's encode that in
+    the type. This is a **breaking change** if you were directly using the counter value or its type
+    before
 
 ## [0.3.0] - 2017-03-06
 ### Added
