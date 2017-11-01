@@ -402,7 +402,7 @@ impl SignalEvent {
                 } else {
                     break;
                 }
-            }
+            },
             //for manual resets, just unilaterally drain the queue
             SignalKind::Manual => while let Some(thread) = self.waiting.try_pop() {
                 thread.unpark();
