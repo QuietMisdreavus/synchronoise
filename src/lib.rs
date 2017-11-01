@@ -18,13 +18,17 @@
 
 //Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
 
+extern crate crossbeam;
+
 mod util;
 
 use std::sync::{Arc, Mutex, Condvar, LockResult, MutexGuard};
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::isize::MIN as ISIZE_MIN;
 use std::time::Duration;
 use std::thread;
+
+use crossbeam::sync::MsQueue;
 
 /// A synchronization primitive that signals when its count reaches zero.
 ///
@@ -324,96 +328,116 @@ pub enum SignalKind {
 /// ```
 pub struct SignalEvent {
     reset: SignalKind,
-    signal: Mutex<bool>,
-    lock: Condvar,
+    signal: AtomicBool,
+    waiting: MsQueue<thread::Thread>,
 }
 
 impl SignalEvent {
     ///Creates a new `SignalEvent` with the given starting state and reset behavior.
+    ///
+    ///If `init_state` is `true`, then this `SignalEvent` will start with the signal already set,
+    ///so that threads that wait will immediately unblock.
     pub fn new(init_state: bool, signal_kind: SignalKind) -> SignalEvent {
         SignalEvent {
             reset: signal_kind,
-            signal: Mutex::new(init_state),
-            lock: Condvar::new(),
+            signal: AtomicBool::new(init_state),
+            waiting: MsQueue::new(),
         }
     }
 
     ///Returns the current signal status of the `SignalEvent`.
     pub fn status(&self) -> bool {
-        let signal = util::guts(self.signal.lock());
-
-        *signal
+        self.signal.load(Ordering::SeqCst)
     }
 
     ///Sets the signal on this `SignalEvent`, potentially waking up one or all threads waiting on
     ///it.
     ///
     ///If more than one thread is waiting on the event, the behavior is different depending on the
-    ///`SignalKind` passed to the event when it was created. For a value of Auto, one thread will
-    ///be resumed. For a value of Manual, all waiting threads will be resumed.
+    ///`SignalKind` passed to the event when it was created. For a value of `Auto`, one thread will
+    ///be resumed. For a value of `Manual`, all waiting threads will be resumed.
     ///
     ///If no thread is currently waiting on the event, its state will be set regardless. Any future
     ///attempts to wait on the event will unblock immediately, except for a `SignalKind` of Auto,
     ///which will immediately unblock the first thread only.
     pub fn signal(&self) {
-        let mut signal = util::guts(self.signal.lock());
-
-        *signal = true;
+        self.signal.store(true, Ordering::SeqCst);
 
         match self.reset {
-            SignalKind::Auto => self.lock.notify_one(),
-            SignalKind::Manual => self.lock.notify_all(),
+            //there may be duplicate handles in the queue due to spurious wakeups, so just loop
+            //until we know the signal got reset - any that got woken up wrongly will also observe
+            //the reset signal and push their handle back in
+            SignalKind::Auto => while self.signal.load(Ordering::SeqCst) {
+                if let Some(thread) = self.waiting.try_pop() {
+                    thread.unpark();
+                } else {
+                    break;
+                }
+            }
+            //for manual resets, just unilaterally drain the queue
+            SignalKind::Manual => while let Some(thread) = self.waiting.try_pop() {
+                thread.unpark();
+            }
         }
     }
 
     ///Resets the signal on this `SignalEvent`, allowing threads that wait on it to block.
     pub fn reset(&self) {
-        let mut signal = util::guts(self.signal.lock());
-
-        *signal = false;
+        self.signal.store(false, Ordering::SeqCst);
     }
 
     ///Blocks this thread until another thread calls `signal`.
     ///
-    ///If this event is already set, then the thread will immediately unblock. For events with a
-    ///`SignalKind` of Auto, this will reset the signal so that the next one to wait will block.
+    ///If this event is already set, then this function will immediately return without blocking.
+    ///For events with a `SignalKind` of `Auto`, this will reset the signal so that the next thread
+    ///to wait will block.
     pub fn wait(&self) {
-        let mut signal = util::guts(self.signal.lock());
-
-        while !*signal {
-            signal = util::guts(self.lock.wait(signal));
-        }
-
-        if self.reset == SignalKind::Auto {
-            //don't want to call self.reset() since it would deadlock the mutex
-            *signal = false;
+        //loop on the park in case we spuriously wake up
+        while !self.check_signal() {
+            //push every time in case there's a race between `signal` and this, since on
+            //`SignalKind::Auto` it will loop until someone turns it off - but only one will
+            //actually exit this loop, because `check_signal` does a CAS
+            self.waiting.push(thread::current());
+            thread::park();
         }
     }
 
     ///Blocks this thread until either another thread calls `signal`, or until the timeout elapses.
     ///
-    ///This function returns both the status of the signal when it woke up, and whether the timeout
-    ///was known to have elapsed. Note that due to platform-specific implementations of
-    ///`std::sync::Condvar`, it's possible for this wait to spuriously wake up when neither the
-    ///signal was set nor the timeout had elapsed.
-    pub fn wait_timeout(&self, timeout: Duration) -> (bool, bool) {
-        let mut signal = util::guts(self.signal.lock());
+    ///This function returns the status of the signal when it woke up. If this function exits
+    ///because the signal was set, and this event has a `SignalKind` of `Auto`, the signal will be
+    ///reset so that the next thread to wait will block.
+    pub fn wait_timeout(&self, timeout: Duration) -> bool {
+        use std::time::Instant;
 
-        if *signal {
-            if self.reset == SignalKind::Auto {
-                *signal = false;
+        let begin = Instant::now();
+        let mut first = true;
+        let mut remaining = timeout;
+        loop {
+            if self.check_signal() {
+                return true;
             }
-            return (true, false);
+
+            if first {
+                first = false;
+            } else {
+                let elapsed = begin.elapsed();
+                if elapsed >= timeout {
+                    return self.status();
+                } else {
+                    remaining = timeout - elapsed;
+                }
+            }
+
+            thread::park_timeout(remaining);
         }
+    }
 
-        let (mut signal, status) = util::guts(self.lock.wait_timeout(signal, timeout));
-        let ret = *signal;
-
-        if self.reset == SignalKind::Auto {
-            *signal = false;
-        }
-
-        (ret, status.timed_out())
+    ///Perfoms an atomic compare-and-swap on the signal, resetting it if (1) it was set, and (2)
+    ///this `SignalEvent` was configured with `SignalKind::Auto`. Returns whether the signal was
+    ///previously set.
+    fn check_signal(&self) -> bool {
+        self.signal.compare_and_swap(true, self.reset == SignalKind::Manual, Ordering::SeqCst)
     }
 }
 

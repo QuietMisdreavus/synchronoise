@@ -1,5 +1,12 @@
 # changelog for synchronoise
 
+## Pending
+### Changed
+- `SignalEvent` has been updated to not use `Mutex`es internally
+  - In the refactor, `wait_timeout` was changed to always wait for the full duration if the signal
+    was never set, so the return value has been changed to reflect this. This is a **breaking
+    change**
+
 ## [0.3.0] - 2017-03-06
 ### Added
 - `CountdownEvent::guard` and `CountdownGuard`, to provide scope-based increment/decrement

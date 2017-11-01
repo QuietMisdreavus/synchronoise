@@ -8,3 +8,4 @@ documentation = "https://docs.rs/synchronoise/"
 license = "MIT/Apache-2.0"
 
 [dependencies]
+crossbeam = "0.3.0"
