@@ -442,7 +442,7 @@ impl SignalEvent {
 }
 
 /// A synchronization primitive that allows for multiple concurrent wait-free "writer critical
-/// sections" and a "reader phase flip" that can wait for all currerntly-active writers to finish.
+/// sections" and a "reader phase flip" that can wait for all currently-active writers to finish.
 ///
 /// The basic interaction setup for a `WriterReaderPhaser` is as follows:
 ///
