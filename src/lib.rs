@@ -223,8 +223,8 @@ impl CountdownEvent {
     ///
     ///This function will return immediately if the counter was already at zero. Otherwise, it will
     ///block for roughly no longer than `timeout`. Due to limitations in the platform specific
-    ///implementation of `std::sync::Condvar`, this method could spuriously wake up both before the timeout
-    ///elapsed and without the count being zero.
+    ///implementation of `std::sync::Condvar`, this method could spuriously wake up both before the
+    ///timeout elapsed and without the count being zero.
     pub fn wait_timeout(&self, timeout: Duration) -> (isize, bool) {
         let count = util::guts(self.counter.lock());
 
