@@ -165,7 +165,7 @@ impl CountdownEvent {
             if let Some(new_count) = current.checked_sub(count) {
                 let last_count = self.counter.compare_and_swap(current, new_count, Ordering::SeqCst);
                 if last_count == current {
-                    current = last_count;
+                    current = new_count;
                     break;
                 } else {
                     current = last_count;
