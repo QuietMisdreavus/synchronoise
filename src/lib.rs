@@ -45,18 +45,24 @@ use crossbeam::sync::MsQueue;
 ///
 /// # Example
 ///
+/// This example uses a `CountdownEvent` to make the "coordinator" thread sleep until all of its
+/// "worker" threads have finished. Each thread calls `signal.decrement()` to signal to the Event
+/// that its work has completed. When the last thread does this (and brings the counter to zero),
+/// the "coordinator" thread wakes up and prints `all done!`.
+///
 /// ```
 /// use synchronoise::CountdownEvent;
 /// use std::sync::Arc;
 /// use std::thread;
 /// use std::time::Duration;
 ///
-/// let counter = Arc::new(CountdownEvent::new(5));
+/// let thread_count = 5;
+/// let counter = Arc::new(CountdownEvent::new(thread_count));
 ///
-/// for i in 0..5 {
+/// for i in 0..thread_count {
 ///     let signal = counter.clone();
 ///     thread::spawn(move || {
-///         thread::sleep(Duration::from_secs(3));
+///         thread::sleep(Duration::from_secs(i as u64));
 ///         println!("thread {} activated!", i);
 ///         signal.decrement().unwrap();
 ///     });
@@ -72,7 +78,11 @@ pub struct CountdownEvent {
     waiting: MsQueue<thread::Thread>,
 }
 
-///The collection of errors that can be returned by `CountdownEvent` methods.
+///The collection of errors that can be returned by [`CountdownEvent`] methods.
+///
+///See [`CountdownEvent`] for more details.
+///
+///[`CountdownEvent`]: struct.CountdownEvent.html
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CountdownError {
     ///Returned when adding to a counter would have caused it to overflow.
@@ -85,6 +95,9 @@ pub enum CountdownError {
 
 impl CountdownEvent {
     ///Creates a new `CountdownEvent`, initialized to the given count.
+    ///
+    ///Remember that once the counter reaches zero, calls to `add` or `signal` will fail, so
+    ///passing zero to this function will create a `CountdownEvent` that is permanently signaled.
     pub fn new(count: usize) -> CountdownEvent {
         CountdownEvent {
             initial: count,
@@ -123,9 +136,10 @@ impl CountdownEvent {
     ///
     ///# Errors
     ///
-    ///If the counter is already at or below zero, this function will return an error.
+    ///If the counter is already at zero, this function will return `CountdownError::AlreadySet`.
     ///
-    ///If the given count would overflow an `isize`, this function will return an error.
+    ///If the given count would cause the counter to overflow `usize`, this function will return
+    ///`CountdownError::SaturatedCounter`.
     pub fn add(&self, count: usize) -> Result<(), CountdownError> {
         let mut current = self.count();
 
@@ -152,9 +166,10 @@ impl CountdownEvent {
     ///
     ///# Errors
     ///
-    ///If the counter was already at or below zero, this function will return an error.
+    ///If the counter is already at zero, this function will return `CountdownError::AlreadySet`.
     ///
-    ///If the given count is greater than the current counter, this function will return an error.
+    ///If the given count would cause the counter to go *below* zero (instead of reaching zero),
+    ///this function will return `CountdownError::TooManySignals`.
     pub fn signal(&self, count: usize) -> Result<bool, CountdownError> {
         let mut current = self.count();
 
@@ -209,14 +224,47 @@ impl CountdownEvent {
         self.signal(1)
     }
 
-    ///Increments the counter, then returns a guard object that will decrement the counter upon
-    ///drop.
+    /// Increments the counter, then returns a guard object that will decrement the counter upon
+    /// drop.
     ///
-    ///# Errors
+    /// # Errors
     ///
-    ///This function will return the same errors as `add`. If the event has already signaled by the
-    ///time the guard is dropped (and would cause its `decrement` call to return an error), then
-    ///the error will be silently ignored.
+    /// This function will return the same errors as `add`. If the event has already signaled by the
+    /// time the guard is dropped (and would cause its `decrement` call to return an error), then
+    /// the error will be silently ignored.
+    ///
+    /// # Example
+    ///
+    /// Here's the sample from the main docs, using `CountdownGuard`s instead of manually
+    /// decrementing:
+    ///
+    /// ```
+    /// use synchronoise::CountdownEvent;
+    /// use std::sync::Arc;
+    /// use std::thread;
+    /// use std::time::Duration;
+    ///
+    /// let thread_count = 5;
+    /// //counter can't start from zero, but the guard increments on its own, so start at one and
+    /// //just decrement once when we're ready to wait
+    /// let counter = Arc::new(CountdownEvent::new(1));
+    ///
+    /// for i in 0..thread_count {
+    ///     let signal = counter.clone();
+    ///     thread::spawn(move || {
+    ///         let _guard = signal.guard().unwrap();
+    ///         thread::sleep(Duration::from_secs(i));
+    ///         println!("thread {} activated!", i);
+    ///     });
+    /// }
+    ///
+    /// //give all the threads time to increment the counter before continuing
+    /// thread::sleep(Duration::from_millis(100));
+    /// counter.decrement().unwrap();
+    /// counter.wait();
+    ///
+    /// println!("all done!");
+    /// ```
     pub fn guard(&self) -> Result<CountdownGuard, CountdownError> {
         CountdownGuard::new(self)
     }
@@ -242,10 +290,11 @@ impl CountdownEvent {
     }
 
     ///Blocks the current thread until the timer reaches zero, or until the given timeout elapses,
-    ///returning the count at the time of wakeup and whether the timeout is known to have elapsed.
+    ///returning the count at the time of wakeup.
     ///
     ///This function will return immediately if the counter was already at zero. Otherwise, it will
-    ///block for roughly no longer than `timeout`.
+    ///block for roughly no longer than `timeout`, or when the counter reaches zero, whichever
+    ///comes first.
     pub fn wait_timeout(&self, timeout: Duration) -> usize {
         use std::time::Instant;
 
@@ -281,6 +330,10 @@ impl CountdownEvent {
 }
 
 ///An opaque guard struct that decrements the count of a borrowed `CountdownEvent` on drop.
+///
+///See [`CountdownEvent::guard`] for more information about this struct.
+///
+///[`CountdownEvent::guard`]: struct.CountdownEvent.html#method.guard
 pub struct CountdownGuard<'a> {
     event: &'a CountdownEvent,
 }
@@ -294,6 +347,10 @@ impl<'a> CountdownGuard<'a> {
     }
 }
 
+///Upon drop, this guard will decrement the counter of its parent `CountdownEvent`. If this would
+///cause an error (see [`CountdownEvent::signal`] for details), the error is silently ignored.
+///
+///[`CountdownEvent::signal`]: struct.CountdownEvent.html#method.signal
 impl<'a> Drop for CountdownGuard<'a> {
     fn drop(&mut self) {
         //if decrement() returns an error, then the event has already been signaled somehow. i'm
@@ -302,7 +359,11 @@ impl<'a> Drop for CountdownGuard<'a> {
     }
 }
 
-///Determines the reset behavior of a `SignalEvent`.
+///Determines the reset behavior of a [`SignalEvent`].
+///
+///See [`SignalEvent`] for more information.
+///
+///[`SignalEvent`]: struct.SignalEvent.html
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SignalKind {
     ///An activated `SignalEvent` automatically resets when a thread is resumed.
@@ -334,6 +395,19 @@ pub enum SignalKind {
 /// [src-link]: https://msdn.microsoft.com/en-us/library/system.threading.eventwaithandle(v=vs.110).aspx
 ///
 /// # Example
+///
+/// The following example uses two `SignalEvent`s:
+///
+/// * `start_signal` is used as a kind of `std::sync::Barrier`, that keeps all the threads inside
+///   the loop from starting until they all have been spawned. All the `start.wait()` calls resume
+///   when `start_signal.signal()` is called after the initial loop.
+///   * Note that because the "coordinator" doesn't wait for each thread to be scheduled before
+///     signaling, it's possible that some later threads may not have had a chance to enter
+///     `start.wait()` before the signal is set. In this case they won't block in the first place,
+///     and immediately return.
+/// * `stop_signal` is used to wake up the "coordinator" thread when each "worker" thread is
+///   finished with its work. This allows it to keep a count of the number of threads yet to
+///   finish, so it can exit its final loop when all the threads have stopped.
 ///
 /// ```
 /// use synchronoise::{SignalEvent, SignalKind};
