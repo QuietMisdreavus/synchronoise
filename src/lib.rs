@@ -226,8 +226,17 @@ impl CountdownEvent {
     ///This function will block indefinitely until the counter reaches zero. It will return
     ///immediately if it is already at zero.
     pub fn wait(&self) {
+        //see SignalEvent::wait for why we push first even if the count is already set
+        self.waiting.push(thread::current());
+
+        let mut first = true;
         while self.count() > 0 {
-            self.waiting.push(thread::current());
+            if first {
+                first = false;
+            } else {
+                self.waiting.push(thread::current());
+            }
+
             thread::park();
         }
     }
@@ -239,6 +248,9 @@ impl CountdownEvent {
     ///block for roughly no longer than `timeout`.
     pub fn wait_timeout(&self, timeout: Duration) -> usize {
         use std::time::Instant;
+
+        //see SignalEvent::wait for why we push first even if the count is already set
+        self.waiting.push(thread::current());
 
         let begin = Instant::now();
         let mut first = true;
@@ -259,9 +271,10 @@ impl CountdownEvent {
                 } else {
                     remaining = timeout - elapsed;
                 }
+
+                self.waiting.push(thread::current());
             }
 
-            self.waiting.push(thread::current());
             thread::park_timeout(remaining);
         }
     }
@@ -421,12 +434,27 @@ impl SignalEvent {
     ///For events with a `SignalKind` of `Auto`, this will reset the signal so that the next thread
     ///to wait will block.
     pub fn wait(&self) {
+        //Push first, regardless, because in SignalEvent's doctest there's a thorny race condition
+        //where (1) the waiting thread will see an unset signal, (2) the signalling thread will set
+        //the signal and drain the queue, and only then (3) the waiting thread will push its
+        //handle. Having erroneous handles is ultimately harmless from a correctness standpoint
+        //because signal loops properly anyway, and if the park handle is already set when a thread
+        //tries to wait it will just immediately unpark, see that the signal is still unset, and
+        //park again. Shame about those spent cycles dealing with it though.
+        self.waiting.push(thread::current());
+
         //loop on the park in case we spuriously wake up
+        let mut first = true;
         while !self.check_signal() {
             //push every time in case there's a race between `signal` and this, since on
             //`SignalKind::Auto` it will loop until someone turns it off - but only one will
             //actually exit this loop, because `check_signal` does a CAS
-            self.waiting.push(thread::current());
+            if first {
+                first = false;
+            } else {
+                self.waiting.push(thread::current());
+            }
+
             thread::park();
         }
     }
@@ -438,6 +466,9 @@ impl SignalEvent {
     ///reset so that the next thread to wait will block.
     pub fn wait_timeout(&self, timeout: Duration) -> bool {
         use std::time::Instant;
+
+        //see SignalEvent::wait for why we push first even if the signal is already set
+        self.waiting.push(thread::current());
 
         let begin = Instant::now();
         let mut first = true;
@@ -456,9 +487,10 @@ impl SignalEvent {
                 } else {
                     remaining = timeout - elapsed;
                 }
+
+                self.waiting.push(thread::current());
             }
 
-            self.waiting.push(thread::current());
             thread::park_timeout(remaining);
         }
     }
