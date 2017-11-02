@@ -49,4 +49,4 @@ build_script:
   - cargo build --verbose
 
 test_script:
-  - cargo test --verbose
+  - cargo test --verbose -- --test-threads=1 --nocapture
