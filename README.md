@@ -1,6 +1,6 @@
 # synchronoise
 
-fun synchronization primitives for your fun synchronization needs
+fun synchronization primitives for your fun synchronization needs [![Build Status](https://travis-ci.org/QuietMisdreavus/synchronoise.svg?branch=master)](https://travis-ci.org/QuietMisdreavus/synchronoise) [![Build status](https://ci.appveyor.com/api/projects/status/222hqcyigcdihfw9/branch/master?svg=true)](https://ci.appveyor.com/project/QuietMisdreavus/synchronoise/branch/master)
 
 [Documentation](https://docs.rs/synchronoise) | ([Manually-generated docs for master][doc-dev])
 
