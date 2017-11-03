@@ -21,7 +21,7 @@ To add this crate to your project, add the following line to your Cargo.toml:
 
 ```toml
 [dependencies]
-synchronoise = "0.3.0"
+synchronoise = "0.4.0"
 ```
 
 ...and the following to your crate root:

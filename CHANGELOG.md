@@ -1,6 +1,6 @@
 # changelog for synchronoise
 
-## Pending
+## [0.4.0] - 2017-11-02
 ### Changed
 - `SignalEvent` and `CountdownEvent` have been updated to not use `Mutex`es internally
   - In the refactor, `wait_timeout` was changed to always wait for the full duration if the signal

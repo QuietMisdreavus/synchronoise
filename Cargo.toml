@@ -1,6 +1,6 @@
 [package]
 name = "synchronoise"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["QuietMisdreavus <grey@quietmisdreavus.net>"]
 description = "Synchronization primitives that build upon the standard library"
 repository = "https://github.com/QuietMisdreavus/synchronoise"
