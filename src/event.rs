@@ -1,7 +1,10 @@
 //! "Event" primitives, allowing one thread to wait on a signal or countdown from other threads.
 //!
-//! The primary types in this module are the `CountdownEvent` and the `SignalEvent` structs. See
+//! The primary types in this module are the [`CountdownEvent`] and the [`SignalEvent`] structs. See
 //! the documentation on those types for further information.
+//!
+//! [`CountdownEvent`]: struct.CountdownEvent.html
+//! [`SignalEvent`]: struct.SignalEvent.html
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
