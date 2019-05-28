@@ -365,14 +365,16 @@ pub enum SignalKind {
 ///
 /// With a `SignalEvent`, it's possible to have one or more threads gate on a signal from another
 /// thread. The behavior for what happens when an event is signaled depends on the value of the
-/// `signal_kind` parameter given to `new`:
+/// `signal_kind` parameter given to `new`, or whether `auto` or `manual` is used to construct the
+/// `SignalEvent`:
 ///
-/// * A value of `SignalKind::Auto` will automatically reset the signal when a thread is resumed by
-///   this event. If more than one thread is waiting on the event when it is signaled, only one
-///   will be resumed.
-/// * A value of `SignalKind::Manual` will remain signaled until it is manually reset. If more than
-///   one thread is waiting on the event when it is signaled, all of them will be resumed. Any
-///   other thread that tries to wait on the signal before it is reset will not be blocked at all.
+/// * A value of `SignalKind::Auto` (or a `SignalEvent` created via `SignalEvent::auto()`) will
+///   automatically reset the signal when a thread is resumed by this event. If more than one
+///   thread is waiting on the event when it is signaled, only one will be resumed.
+/// * A value of `SignalKind::Manual` (or a `SignalEvent` created via `SignalEvent::manual()`) will
+///   remain signaled until it is manually reset. If more than one thread is waiting on the event
+///   when it is signaled, all of them will be resumed. Any other thread that tries to wait on the
+///   signal before it is reset will not be blocked at all.
 ///
 /// `SignalEvent` is a port of [System.Threading.EventWaitHandle][src-link] from .NET.
 ///
@@ -394,13 +396,13 @@ pub enum SignalKind {
 ///   finish, so it can exit its final loop when all the threads have stopped.
 ///
 /// ```
-/// use synchronoise::{SignalEvent, SignalKind};
+/// use synchronoise::SignalEvent;
 /// use std::sync::Arc;
 /// use std::thread;
 /// use std::time::Duration;
 ///
-/// let start_signal = Arc::new(SignalEvent::new(false, SignalKind::Manual));
-/// let stop_signal = Arc::new(SignalEvent::new(false, SignalKind::Auto));
+/// let start_signal = Arc::new(SignalEvent::manual(false));
+/// let stop_signal = Arc::new(SignalEvent::auto(false));
 /// let mut thread_count = 5;
 ///
 /// for i in 0..thread_count {
@@ -443,6 +445,22 @@ impl SignalEvent {
             signal: AtomicBool::new(init_state),
             waiting: MsQueue::new(),
         }
+    }
+
+    /// Creates a new automatically-resetting `SignalEvent` with the given starting state.
+    ///
+    /// If `init_state` is `true`, then this `SignalEvent` will start with the signal already set,
+    /// so that the first thread that tries to wait will immediately unblock.
+    pub fn auto(init_state: bool) -> SignalEvent {
+        SignalEvent::new(init_state, SignalKind::Auto)
+    }
+
+    /// Creates a new manually-resetting `SignalEvent` with the given starting state.
+    ///
+    /// If `init_state` is `true`, then this `SignalEvent` will start with the signal alraedy set,
+    /// so that threads that wait will immediately unblock until `reset` is called.
+    pub fn manual(init_state: bool) -> SignalEvent {
+        SignalEvent::new(init_state, SignalKind::Manual)
     }
 
     /// Returns the current signal status of the `SignalEvent`.
