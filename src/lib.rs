@@ -18,7 +18,7 @@
 
 // Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
 
-extern crate crossbeam;
+extern crate crossbeam_queue;
 
 pub mod event;
 pub mod phaser;

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use std::thread;
 
-use crossbeam::sync::MsQueue;
+use crossbeam_queue::SegQueue;
 
 /// A synchronization primitive that signals when its count reaches zero.
 ///
@@ -60,7 +60,7 @@ use crossbeam::sync::MsQueue;
 pub struct CountdownEvent {
     initial: usize,
     counter: AtomicUsize,
-    waiting: MsQueue<thread::Thread>,
+    waiting: SegQueue<thread::Thread>,
 }
 
 /// The collection of errors that can be returned by [`CountdownEvent`] methods.
@@ -87,7 +87,7 @@ impl CountdownEvent {
         CountdownEvent {
             initial: count,
             counter: AtomicUsize::new(count),
-            waiting: MsQueue::new(),
+            waiting: SegQueue::new(),
         }
     }
 
@@ -98,7 +98,7 @@ impl CountdownEvent {
     pub fn reset(&mut self) {
         self.counter = AtomicUsize::new(self.initial);
         // there shouldn't be any remaining thread handles in here, but let's clear it out anyway
-        while let Some(thread) = self.waiting.try_pop() {
+        while let Ok(thread) = self.waiting.pop() {
             thread.unpark();
         }
     }
@@ -177,7 +177,7 @@ impl CountdownEvent {
         }
 
         if current == 0 {
-            while let Some(thread) = self.waiting.try_pop() {
+            while let Ok(thread) = self.waiting.pop() {
                 thread.unpark();
             }
             Ok(true)
@@ -432,7 +432,7 @@ pub enum SignalKind {
 pub struct SignalEvent {
     reset: SignalKind,
     signal: AtomicBool,
-    waiting: MsQueue<thread::Thread>,
+    waiting: SegQueue<thread::Thread>,
 }
 
 impl SignalEvent {
@@ -444,7 +444,7 @@ impl SignalEvent {
         SignalEvent {
             reset: signal_kind,
             signal: AtomicBool::new(init_state),
-            waiting: MsQueue::new(),
+            waiting: SegQueue::new(),
         }
     }
 
@@ -487,14 +487,14 @@ impl SignalEvent {
             // until we know the signal got reset - any that got woken up wrongly will also observe
             // the reset signal and push their handle back in
             SignalKind::Auto => while self.signal.load(Ordering::SeqCst) {
-                if let Some(thread) = self.waiting.try_pop() {
+                if let Ok(thread) = self.waiting.pop() {
                     thread.unpark();
                 } else {
                     break;
                 }
             },
             // for manual resets, just unilaterally drain the queue
-            SignalKind::Manual => while let Some(thread) = self.waiting.try_pop() {
+            SignalKind::Manual => while let Ok(thread) = self.waiting.pop() {
                 thread.unpark();
             }
         }
