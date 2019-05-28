@@ -16,7 +16,7 @@
 
 #![deny(warnings, missing_docs)]
 
-//Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
+// Name source: http://bulbapedia.bulbagarden.net/wiki/Synchronoise_(move)
 
 extern crate crossbeam;
 
@@ -31,8 +31,8 @@ use crossbeam::sync::MsQueue;
 /// A synchronization primitive that signals when its count reaches zero.
 ///
 /// With a `CountdownEvent`, it's possible to cause one thread to wait on a set of computations
-/// occurring in other threads by making the other threads interact with the counter as they perform
-/// their work.
+/// occurring in other threads by making the other threads interact with the counter as they
+/// perform their work.
 ///
 /// The main limitation of a CountdownEvent is that once its counter reaches zero (even by starting
 /// there), any attempts to update the counter will return `CountdownError::AlreadySet` until the
@@ -78,26 +78,26 @@ pub struct CountdownEvent {
     waiting: MsQueue<thread::Thread>,
 }
 
-///The collection of errors that can be returned by [`CountdownEvent`] methods.
+/// The collection of errors that can be returned by [`CountdownEvent`] methods.
 ///
-///See [`CountdownEvent`] for more details.
+/// See [`CountdownEvent`] for more details.
 ///
-///[`CountdownEvent`]: struct.CountdownEvent.html
+/// [`CountdownEvent`]: struct.CountdownEvent.html
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CountdownError {
-    ///Returned when adding to a counter would have caused it to overflow.
+    /// Returned when adding to a counter would have caused it to overflow.
     SaturatedCounter,
-    ///Returned when attempting to signal would have caused the counter to go below zero.
+    /// Returned when attempting to signal would have caused the counter to go below zero.
     TooManySignals,
-    ///Returned when attempting to modify the counter after it has reached zero.
+    /// Returned when attempting to modify the counter after it has reached zero.
     AlreadySet,
 }
 
 impl CountdownEvent {
-    ///Creates a new `CountdownEvent`, initialized to the given count.
+    /// Creates a new `CountdownEvent`, initialized to the given count.
     ///
-    ///Remember that once the counter reaches zero, calls to `add` or `signal` will fail, so
-    ///passing zero to this function will create a `CountdownEvent` that is permanently signaled.
+    /// Remember that once the counter reaches zero, calls to `add` or `signal` will fail, so
+    /// passing zero to this function will create a `CountdownEvent` that is permanently signaled.
     pub fn new(count: usize) -> CountdownEvent {
         CountdownEvent {
             initial: count,
@@ -106,40 +106,40 @@ impl CountdownEvent {
         }
     }
 
-    ///Resets the counter to the count given to `new`.
+    /// Resets the counter to the count given to `new`.
     ///
-    ///This function is safe because the `&mut self` enforces that no other references or locks
-    ///exist.
+    /// This function is safe because the `&mut self` enforces that no other references or locks
+    /// exist.
     pub fn reset(&mut self) {
         self.counter = AtomicUsize::new(self.initial);
-        //there shouldn't be any remaining thread handles in here, but let's clear it out anyway
+        // there shouldn't be any remaining thread handles in here, but let's clear it out anyway
         while let Some(thread) = self.waiting.try_pop() {
             thread.unpark();
         }
     }
 
-    ///Resets the counter to the given count.
+    /// Resets the counter to the given count.
     ///
-    ///This function is safe because the `&mut self` enforces that no other references or locks
-    ///exist.
+    /// This function is safe because the `&mut self` enforces that no other references or locks
+    /// exist.
     pub fn reset_to_count(&mut self, count: usize) {
         self.initial = count;
         self.reset();
     }
 
-    ///Returns the current counter value.
+    /// Returns the current counter value.
     pub fn count(&self) -> usize {
         self.counter.load(Ordering::SeqCst)
     }
 
-    ///Adds the given count to the counter.
+    /// Adds the given count to the counter.
     ///
-    ///# Errors
+    /// # Errors
     ///
-    ///If the counter is already at zero, this function will return `CountdownError::AlreadySet`.
+    /// If the counter is already at zero, this function will return `CountdownError::AlreadySet`.
     ///
-    ///If the given count would cause the counter to overflow `usize`, this function will return
-    ///`CountdownError::SaturatedCounter`.
+    /// If the given count would cause the counter to overflow `usize`, this function will return
+    /// `CountdownError::SaturatedCounter`.
     pub fn add(&self, count: usize) -> Result<(), CountdownError> {
         let mut current = self.count();
 
@@ -161,15 +161,15 @@ impl CountdownEvent {
         }
     }
 
-    ///Subtracts the given count to the counter, and returns whether this caused any waiting
-    ///threads to wake up.
+    /// Subtracts the given count to the counter, and returns whether this caused any waiting
+    /// threads to wake up.
     ///
-    ///# Errors
+    /// # Errors
     ///
-    ///If the counter is already at zero, this function will return `CountdownError::AlreadySet`.
+    /// If the counter is already at zero, this function will return `CountdownError::AlreadySet`.
     ///
-    ///If the given count would cause the counter to go *below* zero (instead of reaching zero),
-    ///this function will return `CountdownError::TooManySignals`.
+    /// If the given count would cause the counter to go *below* zero (instead of reaching zero),
+    /// this function will return `CountdownError::TooManySignals`.
     pub fn signal(&self, count: usize) -> Result<bool, CountdownError> {
         let mut current = self.count();
 
@@ -201,25 +201,25 @@ impl CountdownEvent {
         }
     }
 
-    ///Adds one to the count.
+    /// Adds one to the count.
     ///
-    ///# Errors
+    /// # Errors
     ///
-    ///See [`add`] for the situations where this function will return an error.
+    /// See [`add`] for the situations where this function will return an error.
     ///
-    ///[`add`]: #method.add
+    /// [`add`]: #method.add
     pub fn increment(&self) -> Result<(), CountdownError> {
         self.add(1)
     }
 
-    ///Subtracts one from the counter, and returns whether this caused any waiting threads to wake
-    ///up.
+    /// Subtracts one from the counter, and returns whether this caused any waiting threads to wake
+    /// up.
     ///
-    ///# Errors
+    /// # Errors
     ///
-    ///See [`signal`] for the situations where this function will return an error.
+    /// See [`signal`] for the situations where this function will return an error.
     ///
-    ///[`signal`]: #method.signal
+    /// [`signal`]: #method.signal
     pub fn decrement(&self) -> Result<bool, CountdownError> {
         self.signal(1)
     }
@@ -229,9 +229,9 @@ impl CountdownEvent {
     ///
     /// # Errors
     ///
-    /// This function will return the same errors as `add`. If the event has already signaled by the
-    /// time the guard is dropped (and would cause its `decrement` call to return an error), then
-    /// the error will be silently ignored.
+    /// This function will return the same errors as `add`. If the event has already signaled by
+    /// the time the guard is dropped (and would cause its `decrement` call to return an error),
+    /// then the error will be silently ignored.
     ///
     /// # Example
     ///
@@ -245,8 +245,8 @@ impl CountdownEvent {
     /// use std::time::Duration;
     ///
     /// let thread_count = 5;
-    /// //counter can't start from zero, but the guard increments on its own, so start at one and
-    /// //just decrement once when we're ready to wait
+    /// // counter can't start from zero, but the guard increments on its own, so start at one and
+    /// // just decrement once when we're ready to wait
     /// let counter = Arc::new(CountdownEvent::new(1));
     ///
     /// for i in 0..thread_count {
@@ -258,7 +258,7 @@ impl CountdownEvent {
     ///     });
     /// }
     ///
-    /// //give all the threads time to increment the counter before continuing
+    /// // give all the threads time to increment the counter before continuing
     /// thread::sleep(Duration::from_millis(100));
     /// counter.decrement().unwrap();
     /// counter.wait();
@@ -269,12 +269,12 @@ impl CountdownEvent {
         CountdownGuard::new(self)
     }
 
-    ///Blocks the current thread until the counter reaches zero.
+    /// Blocks the current thread until the counter reaches zero.
     ///
-    ///This function will block indefinitely until the counter reaches zero. It will return
-    ///immediately if it is already at zero.
+    /// This function will block indefinitely until the counter reaches zero. It will return
+    /// immediately if it is already at zero.
     pub fn wait(&self) {
-        //see SignalEvent::wait for why we push first even if the count is already set
+        // see SignalEvent::wait for why we push first even if the count is already set
         self.waiting.push(thread::current());
 
         let mut first = true;
@@ -289,16 +289,16 @@ impl CountdownEvent {
         }
     }
 
-    ///Blocks the current thread until the timer reaches zero, or until the given timeout elapses,
-    ///returning the count at the time of wakeup.
+    /// Blocks the current thread until the timer reaches zero, or until the given timeout elapses,
+    /// returning the count at the time of wakeup.
     ///
-    ///This function will return immediately if the counter was already at zero. Otherwise, it will
-    ///block for roughly no longer than `timeout`, or when the counter reaches zero, whichever
-    ///comes first.
+    /// This function will return immediately if the counter was already at zero. Otherwise, it
+    /// will block for roughly no longer than `timeout`, or when the counter reaches zero,
+    /// whichever comes first.
     pub fn wait_timeout(&self, timeout: Duration) -> usize {
         use std::time::Instant;
 
-        //see SignalEvent::wait for why we push first even if the count is already set
+        // see SignalEvent::wait for why we push first even if the count is already set
         self.waiting.push(thread::current());
 
         let begin = Instant::now();
@@ -329,11 +329,11 @@ impl CountdownEvent {
     }
 }
 
-///An opaque guard struct that decrements the count of a borrowed `CountdownEvent` on drop.
+/// An opaque guard struct that decrements the count of a borrowed `CountdownEvent` on drop.
 ///
-///See [`CountdownEvent::guard`] for more information about this struct.
+/// See [`CountdownEvent::guard`] for more information about this struct.
 ///
-///[`CountdownEvent::guard`]: struct.CountdownEvent.html#method.guard
+/// [`CountdownEvent::guard`]: struct.CountdownEvent.html#method.guard
 pub struct CountdownGuard<'a> {
     event: &'a CountdownEvent,
 }
@@ -347,32 +347,32 @@ impl<'a> CountdownGuard<'a> {
     }
 }
 
-///Upon drop, this guard will decrement the counter of its parent `CountdownEvent`. If this would
-///cause an error (see [`CountdownEvent::signal`] for details), the error is silently ignored.
+/// Upon drop, this guard will decrement the counter of its parent `CountdownEvent`. If this would
+/// cause an error (see [`CountdownEvent::signal`] for details), the error is silently ignored.
 ///
-///[`CountdownEvent::signal`]: struct.CountdownEvent.html#method.signal
+/// [`CountdownEvent::signal`]: struct.CountdownEvent.html#method.signal
 impl<'a> Drop for CountdownGuard<'a> {
     fn drop(&mut self) {
-        //if decrement() returns an error, then the event has already been signaled somehow. i'm
-        //not gonna care about it tho
+        // if decrement() returns an error, then the event has already been signaled somehow. i'm
+        // not gonna care about it tho
         self.event.decrement().ok();
     }
 }
 
-///Determines the reset behavior of a [`SignalEvent`].
+/// Determines the reset behavior of a [`SignalEvent`].
 ///
-///See [`SignalEvent`] for more information.
+/// See [`SignalEvent`] for more information.
 ///
-///[`SignalEvent`]: struct.SignalEvent.html
+/// [`SignalEvent`]: struct.SignalEvent.html
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SignalKind {
-    ///An activated `SignalEvent` automatically resets when a thread is resumed.
+    /// An activated `SignalEvent` automatically resets when a thread is resumed.
     ///
-    ///`SignalEvent`s with this kind will only resume one thread at a time.
+    /// `SignalEvent`s with this kind will only resume one thread at a time.
     Auto,
-    ///An activated `SignalEvent` must be manually reset to block threads again.
+    /// An activated `SignalEvent` must be manually reset to block threads again.
     ///
-    ///`SignalEvent`s with this kind will signal every waiting thread to continue at once.
+    /// `SignalEvent`s with this kind will signal every waiting thread to continue at once.
     Manual,
 }
 
@@ -423,7 +423,7 @@ pub enum SignalKind {
 ///     let start = start_signal.clone();
 ///     let stop = stop_signal.clone();
 ///     thread::spawn(move || {
-///         //as a Manual-reset signal, all the threads will start at the same time
+///         // as a Manual-reset signal, all the threads will start at the same time
 ///         start.wait();
 ///         thread::sleep(Duration::from_secs(i));
 ///         println!("thread {} activated!", i);
@@ -434,8 +434,8 @@ pub enum SignalKind {
 /// start_signal.signal();
 ///
 /// while thread_count > 0 {
-///     //as an Auto-reset signal, this will automatically reset when resuming
-///     //so when the loop comes back, we don't have to reset before blocking again
+///     // as an Auto-reset signal, this will automatically reset when resuming
+///     // so when the loop comes back, we don't have to reset before blocking again
 ///     stop_signal.wait();
 ///     thread_count -= 1;
 /// }
@@ -449,10 +449,10 @@ pub struct SignalEvent {
 }
 
 impl SignalEvent {
-    ///Creates a new `SignalEvent` with the given starting state and reset behavior.
+    /// Creates a new `SignalEvent` with the given starting state and reset behavior.
     ///
-    ///If `init_state` is `true`, then this `SignalEvent` will start with the signal already set,
-    ///so that threads that wait will immediately unblock.
+    /// If `init_state` is `true`, then this `SignalEvent` will start with the signal already set,
+    /// so that threads that wait will immediately unblock.
     pub fn new(init_state: bool, signal_kind: SignalKind) -> SignalEvent {
         SignalEvent {
             reset: signal_kind,
@@ -461,28 +461,28 @@ impl SignalEvent {
         }
     }
 
-    ///Returns the current signal status of the `SignalEvent`.
+    /// Returns the current signal status of the `SignalEvent`.
     pub fn status(&self) -> bool {
         self.signal.load(Ordering::SeqCst)
     }
 
-    ///Sets the signal on this `SignalEvent`, potentially waking up one or all threads waiting on
-    ///it.
+    /// Sets the signal on this `SignalEvent`, potentially waking up one or all threads waiting on
+    /// it.
     ///
-    ///If more than one thread is waiting on the event, the behavior is different depending on the
-    ///`SignalKind` passed to the event when it was created. For a value of `Auto`, one thread will
-    ///be resumed. For a value of `Manual`, all waiting threads will be resumed.
+    /// If more than one thread is waiting on the event, the behavior is different depending on the
+    /// `SignalKind` passed to the event when it was created. For a value of `Auto`, one thread
+    /// will be resumed. For a value of `Manual`, all waiting threads will be resumed.
     ///
-    ///If no thread is currently waiting on the event, its state will be set regardless. Any future
-    ///attempts to wait on the event will unblock immediately, except for a `SignalKind` of Auto,
-    ///which will immediately unblock the first thread only.
+    /// If no thread is currently waiting on the event, its state will be set regardless. Any
+    /// future attempts to wait on the event will unblock immediately, except for a `SignalKind` of
+    /// Auto, which will immediately unblock the first thread only.
     pub fn signal(&self) {
         self.signal.store(true, Ordering::SeqCst);
 
         match self.reset {
-            //there may be duplicate handles in the queue due to spurious wakeups, so just loop
-            //until we know the signal got reset - any that got woken up wrongly will also observe
-            //the reset signal and push their handle back in
+            // there may be duplicate handles in the queue due to spurious wakeups, so just loop
+            // until we know the signal got reset - any that got woken up wrongly will also observe
+            // the reset signal and push their handle back in
             SignalKind::Auto => while self.signal.load(Ordering::SeqCst) {
                 if let Some(thread) = self.waiting.try_pop() {
                     thread.unpark();
@@ -490,39 +490,39 @@ impl SignalEvent {
                     break;
                 }
             },
-            //for manual resets, just unilaterally drain the queue
+            // for manual resets, just unilaterally drain the queue
             SignalKind::Manual => while let Some(thread) = self.waiting.try_pop() {
                 thread.unpark();
             }
         }
     }
 
-    ///Resets the signal on this `SignalEvent`, allowing threads that wait on it to block.
+    /// Resets the signal on this `SignalEvent`, allowing threads that wait on it to block.
     pub fn reset(&self) {
         self.signal.store(false, Ordering::SeqCst);
     }
 
-    ///Blocks this thread until another thread calls `signal`.
+    /// Blocks this thread until another thread calls `signal`.
     ///
-    ///If this event is already set, then this function will immediately return without blocking.
-    ///For events with a `SignalKind` of `Auto`, this will reset the signal so that the next thread
-    ///to wait will block.
+    /// If this event is already set, then this function will immediately return without blocking.
+    /// For events with a `SignalKind` of `Auto`, this will reset the signal so that the next
+    /// thread to wait will block.
     pub fn wait(&self) {
-        //Push first, regardless, because in SignalEvent's doctest there's a thorny race condition
-        //where (1) the waiting thread will see an unset signal, (2) the signalling thread will set
-        //the signal and drain the queue, and only then (3) the waiting thread will push its
-        //handle. Having erroneous handles is ultimately harmless from a correctness standpoint
-        //because signal loops properly anyway, and if the park handle is already set when a thread
-        //tries to wait it will just immediately unpark, see that the signal is still unset, and
-        //park again. Shame about those spent cycles dealing with it though.
+        // Push first, regardless, because in SignalEvent's doctest there's a thorny race condition
+        // where (1) the waiting thread will see an unset signal, (2) the signalling thread will
+        // set the signal and drain the queue, and only then (3) the waiting thread will push its
+        // handle. Having erroneous handles is ultimately harmless from a correctness standpoint
+        // because signal loops properly anyway, and if the park handle is already set when a
+        // thread tries to wait it will just immediately unpark, see that the signal is still
+        // unset, and park again. Shame about those spent cycles dealing with it though.
         self.waiting.push(thread::current());
 
-        //loop on the park in case we spuriously wake up
+        // loop on the park in case we spuriously wake up
         let mut first = true;
         while !self.check_signal() {
-            //push every time in case there's a race between `signal` and this, since on
-            //`SignalKind::Auto` it will loop until someone turns it off - but only one will
-            //actually exit this loop, because `check_signal` does a CAS
+            // push every time in case there's a race between `signal` and this, since on
+            // `SignalKind::Auto` it will loop until someone turns it off - but only one will
+            // actually exit this loop, because `check_signal` does a CAS
             if first {
                 first = false;
             } else {
@@ -533,15 +533,16 @@ impl SignalEvent {
         }
     }
 
-    ///Blocks this thread until either another thread calls `signal`, or until the timeout elapses.
+    /// Blocks this thread until either another thread calls `signal`, or until the timeout
+    /// elapses.
     ///
-    ///This function returns the status of the signal when it woke up. If this function exits
-    ///because the signal was set, and this event has a `SignalKind` of `Auto`, the signal will be
-    ///reset so that the next thread to wait will block.
+    /// This function returns the status of the signal when it woke up. If this function exits
+    /// because the signal was set, and this event has a `SignalKind` of `Auto`, the signal will be
+    /// reset so that the next thread to wait will block.
     pub fn wait_timeout(&self, timeout: Duration) -> bool {
         use std::time::Instant;
 
-        //see SignalEvent::wait for why we push first even if the signal is already set
+        // see SignalEvent::wait for why we push first even if the signal is already set
         self.waiting.push(thread::current());
 
         let begin = Instant::now();
@@ -569,9 +570,9 @@ impl SignalEvent {
         }
     }
 
-    ///Perfoms an atomic compare-and-swap on the signal, resetting it if (1) it was set, and (2)
-    ///this `SignalEvent` was configured with `SignalKind::Auto`. Returns whether the signal was
-    ///previously set.
+    /// Perfoms an atomic compare-and-swap on the signal, resetting it if (1) it was set, and (2)
+    /// this `SignalEvent` was configured with `SignalKind::Auto`. Returns whether the signal was
+    /// previously set.
     fn check_signal(&self) -> bool {
         self.signal.compare_and_swap(true, self.reset == SignalKind::Manual, Ordering::SeqCst)
     }
@@ -635,8 +636,8 @@ pub struct PhaserCriticalSection {
     end_epoch: Arc<AtomicIsize>,
 }
 
-///Upon drop, a `PhaserCriticalSection` will signal its parent `WriterReaderPhaser` that the
-///critical section has ended.
+/// Upon drop, a `PhaserCriticalSection` will signal its parent `WriterReaderPhaser` that the
+/// critical section has ended.
 impl Drop for PhaserCriticalSection {
     fn drop(&mut self) {
         self.end_epoch.fetch_add(1, Ordering::Release);
@@ -670,7 +671,7 @@ pub struct PhaserReadLock {
 }
 
 impl WriterReaderPhaser {
-    ///Creates a new `WriterReaderPhaser`.
+    /// Creates a new `WriterReaderPhaser`.
     pub fn new() -> WriterReaderPhaser {
         let start = Arc::new(AtomicIsize::new(0));
         let even = Arc::new(AtomicIsize::new(0));
@@ -689,8 +690,8 @@ impl WriterReaderPhaser {
         }
     }
 
-    ///Enters a writer critical section, returning a guard object that signals the end of the
-    ///critical section upon drop.
+    /// Enters a writer critical section, returning a guard object that signals the end of the
+    /// critical section upon drop.
     pub fn writer_critical_section(&self) -> PhaserCriticalSection {
         let flag = self.start_epoch.fetch_add(1, Ordering::Release);
 
@@ -705,28 +706,28 @@ impl WriterReaderPhaser {
         }
     }
 
-    ///Enter a reader criticial section, potentially blocking until a currently active read section
-    ///finishes. Returns a guard object that allows the user to flip the phase of the
-    ///`WriterReaderPhaser`, and unlocks the read lock upon drop.
+    /// Enter a reader criticial section, potentially blocking until a currently active read
+    /// section finishes. Returns a guard object that allows the user to flip the phase of the
+    /// `WriterReaderPhaser`, and unlocks the read lock upon drop.
     ///
-    ///# Errors
+    /// # Errors
     ///
-    ///If another reader critical section panicked while holding the read lock, this call will
-    ///return an error once the lock is acquired. See the documentation for
-    ///`std::sync::Mutex::lock` for details.
+    /// If another reader critical section panicked while holding the read lock, this call will
+    /// return an error once the lock is acquired. See the documentation for
+    /// `std::sync::Mutex::lock` for details.
     pub fn read_lock(&self) -> LockResult<MutexGuard<PhaserReadLock>> {
         self.read_lock.lock()
     }
 }
 
 impl PhaserReadLock {
-    ///Wait until all currently-active writer critical sections have completed.
+    /// Wait until all currently-active writer critical sections have completed.
     pub fn flip_phase(&self) {
         self.flip_with_sleep(Duration::default());
     }
 
-    ///Wait until all currently-active writer critical sections have completed. While waiting,
-    ///sleep with the given duration.
+    /// Wait until all currently-active writer critical sections have completed. While waiting,
+    /// sleep with the given duration.
     pub fn flip_with_sleep(&self, sleep_time: Duration) {
         let next_phase_even = self.start_epoch.load(Ordering::Relaxed) < 0;
 
