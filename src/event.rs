@@ -23,9 +23,10 @@ use crossbeam::sync::MsQueue;
 /// counter is reset by calling `reset` or `reset_to_count`.
 ///
 /// `CountdownEvent` is a port of [System.Threading.CountdownEvent][src-link] from .NET (also
-/// called `CountDownLatch` in Java).
+/// called [`CountDownLatch`][java-src] in Java).
 ///
 /// [src-link]: https://msdn.microsoft.com/en-us/library/system.threading.countdownevent(v=vs.110).aspx
+/// [java-src]: https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/CountDownLatch.html
 ///
 /// # Example
 ///
