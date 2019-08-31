@@ -10,9 +10,9 @@
 //! * [`WriterReaderPhaser`], a primitive that allows multiple wait-free "writer critical sections"
 //!   against a "reader phase flip" that waits for currently-active writers to finish.
 //!
-//! [`CountdownEvent`]: struct.CountdownEvent.html
-//! [`SignalEvent`]: struct.SignalEvent.html
-//! [`WriterReaderPhaser`]: struct.WriterReaderPhaser.html
+//! [`CountdownEvent`]: event::struct.CountdownEvent.html
+//! [`SignalEvent`]: event::struct.SignalEvent.html
+//! [`WriterReaderPhaser`]: phaser::struct.WriterReaderPhaser.html
 
 #![deny(warnings, missing_docs)]
 
