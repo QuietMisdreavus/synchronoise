@@ -98,7 +98,7 @@ impl CountdownEvent {
     pub fn reset(&mut self) {
         self.counter = AtomicUsize::new(self.initial);
         // there shouldn't be any remaining thread handles in here, but let's clear it out anyway
-        while let Ok(thread) = self.waiting.pop() {
+        while let Some(thread) = self.waiting.pop() {
             thread.unpark();
         }
     }
@@ -181,7 +181,7 @@ impl CountdownEvent {
         }
 
         if current == 0 {
-            while let Ok(thread) = self.waiting.pop() {
+            while let Some(thread) = self.waiting.pop() {
                 thread.unpark();
             }
             Ok(true)
@@ -490,7 +490,7 @@ impl SignalEvent {
             // the reset signal and push their handle back in
             SignalKind::Auto => {
                 while self.signal.load(Ordering::SeqCst) {
-                    if let Ok(thread) = self.waiting.pop() {
+                    if let Some(thread) = self.waiting.pop() {
                         thread.unpark();
                     } else {
                         break;
@@ -499,7 +499,7 @@ impl SignalEvent {
             }
             // for manual resets, just unilaterally drain the queue
             SignalKind::Manual => {
-                while let Ok(thread) = self.waiting.pop() {
+                while let Some(thread) = self.waiting.pop() {
                     thread.unpark();
                 }
             }
