@@ -6,6 +6,7 @@
 //! [`CountdownEvent`]: struct.CountdownEvent.html
 //! [`SignalEvent`]: struct.SignalEvent.html
 
+use std::convert::identity;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -134,13 +135,15 @@ impl CountdownEvent {
             }
 
             if let Some(new_count) = current.checked_add(count) {
-                let last_count =
-                    self.counter
-                        .compare_and_swap(current, new_count, Ordering::SeqCst);
-                if last_count == current {
-                    return Ok(());
-                } else {
-                    current = last_count;
+                let exchange_result = self.counter.compare_exchange_weak(
+                    current,
+                    new_count,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+                match exchange_result {
+                    Ok(_) => return Ok(()),
+                    Err(last_count) => current = last_count,
                 }
             } else {
                 return Err(CountdownError::SaturatedCounter);
@@ -166,14 +169,18 @@ impl CountdownEvent {
             }
 
             if let Some(new_count) = current.checked_sub(count) {
-                let last_count =
-                    self.counter
-                        .compare_and_swap(current, new_count, Ordering::SeqCst);
-                if last_count == current {
-                    current = new_count;
-                    break;
-                } else {
-                    current = last_count;
+                let exchange_result = self.counter.compare_exchange_weak(
+                    current,
+                    new_count,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+                match exchange_result {
+                    Ok(_) => {
+                        current = new_count;
+                        break;
+                    }
+                    Err(last_count) => current = last_count,
                 }
             } else {
                 return Err(CountdownError::TooManySignals);
@@ -579,11 +586,17 @@ impl SignalEvent {
         }
     }
 
-    /// Perfoms an atomic compare-and-swap on the signal, resetting it if (1) it was set, and (2)
+    /// Perfoms an atomic compare-exchange on the signal, resetting it if (1) it was set, and (2)
     /// this `SignalEvent` was configured with `SignalKind::Auto`. Returns whether the signal was
     /// previously set.
     fn check_signal(&self) -> bool {
         self.signal
-            .compare_and_swap(true, self.reset == SignalKind::Manual, Ordering::SeqCst)
+            .compare_exchange_weak(
+                true,
+                self.reset == SignalKind::Manual,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .unwrap_or_else(identity)
     }
 }
