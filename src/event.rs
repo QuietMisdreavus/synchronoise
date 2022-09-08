@@ -6,9 +6,10 @@
 //! [`CountdownEvent`]: struct.CountdownEvent.html
 //! [`SignalEvent`]: struct.SignalEvent.html
 
+use std::convert::identity;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 use crossbeam_queue::SegQueue;
 
@@ -98,7 +99,7 @@ impl CountdownEvent {
     pub fn reset(&mut self) {
         self.counter = AtomicUsize::new(self.initial);
         // there shouldn't be any remaining thread handles in here, but let's clear it out anyway
-        while let Ok(thread) = self.waiting.pop() {
+        while let Some(thread) = self.waiting.pop() {
             thread.unpark();
         }
     }
@@ -134,11 +135,15 @@ impl CountdownEvent {
             }
 
             if let Some(new_count) = current.checked_add(count) {
-                let last_count = self.counter.compare_and_swap(current, new_count, Ordering::SeqCst);
-                if last_count == current {
-                    return Ok(());
-                } else {
-                    current = last_count;
+                let exchange_result = self.counter.compare_exchange_weak(
+                    current,
+                    new_count,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+                match exchange_result {
+                    Ok(_) => return Ok(()),
+                    Err(last_count) => current = last_count,
                 }
             } else {
                 return Err(CountdownError::SaturatedCounter);
@@ -164,12 +169,18 @@ impl CountdownEvent {
             }
 
             if let Some(new_count) = current.checked_sub(count) {
-                let last_count = self.counter.compare_and_swap(current, new_count, Ordering::SeqCst);
-                if last_count == current {
-                    current = new_count;
-                    break;
-                } else {
-                    current = last_count;
+                let exchange_result = self.counter.compare_exchange_weak(
+                    current,
+                    new_count,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+                match exchange_result {
+                    Ok(_) => {
+                        current = new_count;
+                        break;
+                    }
+                    Err(last_count) => current = last_count,
                 }
             } else {
                 return Err(CountdownError::TooManySignals);
@@ -177,7 +188,7 @@ impl CountdownEvent {
         }
 
         if current == 0 {
-            while let Ok(thread) = self.waiting.pop() {
+            while let Some(thread) = self.waiting.pop() {
                 thread.unpark();
             }
             Ok(true)
@@ -325,10 +336,8 @@ pub struct CountdownGuard<'a> {
 
 impl<'a> CountdownGuard<'a> {
     fn new(event: &'a CountdownEvent) -> Result<CountdownGuard<'a>, CountdownError> {
-        try!(event.increment());
-        Ok(CountdownGuard {
-                event: event,
-        })
+        event.increment()?;
+        Ok(CountdownGuard { event })
     }
 }
 
@@ -486,16 +495,20 @@ impl SignalEvent {
             // there may be duplicate handles in the queue due to spurious wakeups, so just loop
             // until we know the signal got reset - any that got woken up wrongly will also observe
             // the reset signal and push their handle back in
-            SignalKind::Auto => while self.signal.load(Ordering::SeqCst) {
-                if let Ok(thread) = self.waiting.pop() {
-                    thread.unpark();
-                } else {
-                    break;
+            SignalKind::Auto => {
+                while self.signal.load(Ordering::SeqCst) {
+                    if let Some(thread) = self.waiting.pop() {
+                        thread.unpark();
+                    } else {
+                        break;
+                    }
                 }
-            },
+            }
             // for manual resets, just unilaterally drain the queue
-            SignalKind::Manual => while let Ok(thread) = self.waiting.pop() {
-                thread.unpark();
+            SignalKind::Manual => {
+                while let Some(thread) = self.waiting.pop() {
+                    thread.unpark();
+                }
             }
         }
     }
@@ -573,10 +586,17 @@ impl SignalEvent {
         }
     }
 
-    /// Perfoms an atomic compare-and-swap on the signal, resetting it if (1) it was set, and (2)
+    /// Perfoms an atomic compare-exchange on the signal, resetting it if (1) it was set, and (2)
     /// this `SignalEvent` was configured with `SignalKind::Auto`. Returns whether the signal was
     /// previously set.
     fn check_signal(&self) -> bool {
-        self.signal.compare_and_swap(true, self.reset == SignalKind::Manual, Ordering::SeqCst)
+        self.signal
+            .compare_exchange_weak(
+                true,
+                self.reset == SignalKind::Manual,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .unwrap_or_else(identity)
     }
 }
